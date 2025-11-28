@@ -1,10 +1,10 @@
-import {Constants} from "../constants";
+import { Constants } from "../constants";
 /// #if !MOBILE
-import {Tab} from "./Tab";
+import { Tab } from "./Tab";
 /// #endif
-import {processMessage} from "../util/processMessage";
-import {kernelError, reloadSync} from "../dialog/processSystem";
-import {App} from "../index";
+import { processMessage } from "../util/processMessage";
+import { kernelError, reloadSync } from "../dialog/processSystem";
+import { App } from "../index";
 
 export class Model {
     public ws: WebSocket;
@@ -37,7 +37,21 @@ export class Model {
         msgCallback?: (data: IWebSocketData) => void
     }) {
         const websocketURL = `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}/ws`;
-        const ws = new WebSocket(`${websocketURL}?app=${Constants.SIYUAN_APPID}&id=${options.id}${options.type ? "&type=" + options.type : ""}`);
+        // 获取认证token
+        const getCookie = (name: string): string | null => {
+            const value = `; ${document.cookie}`;
+            const parts = value.split(`; ${name}=`);
+            if (parts.length === 2) {
+                return parts.pop()?.split(';').shift() || null;
+            }
+            return null;
+        };
+        const token = localStorage.getItem('siyuan_token') || getCookie('siyuan_token');
+        let url = `${websocketURL}?app=${Constants.SIYUAN_APPID}&id=${options.id}${options.type ? "&type=" + options.type : ""}`;
+        if (token) {
+            url += `&token=${encodeURIComponent(token)}`;
+        }
+        const ws = new WebSocket(url);
         ws.onopen = () => {
             if (options.callback) {
                 options.callback.call(this);
@@ -45,7 +59,7 @@ export class Model {
             const logElement = document.getElementById("errorLog");
             if (logElement) {
                 // 内核中断后无法 catch fetch 请求错误，重连会导致无法执行 transactionsTimeout
-                reloadSync(this.app, {upsertRootIDs: [], removeRootIDs: []});
+                reloadSync(this.app, { upsertRootIDs: [], removeRootIDs: [] });
                 window.siyuan.dialogs.find(item => {
                     if (item.element.id === "errorLog") {
                         item.destroy();

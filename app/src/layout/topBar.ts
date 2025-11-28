@@ -1,25 +1,25 @@
-import {getWorkspaceName} from "../util/noRelyPCFunction";
-import {isInAndroid, isInHarmony, isInIOS, setStorageVal, updateHotkeyTip} from "../protyle/util/compatibility";
-import {exitSiYuan, processSync} from "../dialog/processSystem";
-import {goBack, goForward} from "../util/backForward";
-import {syncGuide} from "../sync/syncGuide";
-import {workspaceMenu} from "../menus/workspace";
-import {MenuItem} from "../menus/Menu";
-import {setMode} from "../util/assets";
-import {openSetting} from "../config";
-import {openSearch} from "../search/spread";
-import {App} from "../index";
+import { getWorkspaceName } from "../util/noRelyPCFunction";
+import { isInAndroid, isInHarmony, isInIOS, setStorageVal, updateHotkeyTip } from "../protyle/util/compatibility";
+import { exitSiYuan, processSync } from "../dialog/processSystem";
+import { goBack, goForward } from "../util/backForward";
+import { syncGuide } from "../sync/syncGuide";
+import { workspaceMenu } from "../menus/workspace";
+import { MenuItem } from "../menus/Menu";
+import { setMode } from "../util/assets";
+import { openSetting } from "../config";
+import { openSearch } from "../search/spread";
+import { App } from "../index";
 /// #if !BROWSER
-import {ipcRenderer, webFrame} from "electron";
+import { ipcRenderer, webFrame } from "electron";
 /// #endif
-import {Constants} from "../constants";
-import {isBrowser, isWindow} from "../util/functions";
-import {fetchPost} from "../util/fetch";
-import {needSubscribe} from "../util/needSubscribe";
+import { Constants } from "../constants";
+import { isBrowser, isWindow } from "../util/functions";
+import { fetchPost } from "../util/fetch";
+import { needSubscribe } from "../util/needSubscribe";
 import * as dayjs from "dayjs";
-import {exportLayout} from "./util";
-import {commandPanel} from "../boot/globalEvent/command/panel";
-import {openTopBarMenu} from "../plugin/openTopBarMenu";
+import { exportLayout } from "./util";
+import { commandPanel } from "../boot/globalEvent/command/panel";
+import { openTopBarMenu } from "../plugin/openTopBarMenu";
 
 export const initBar = (app: App) => {
     const toolbarElement = document.getElementById("toolbar");
@@ -38,7 +38,12 @@ export const initBar = (app: App) => {
     <svg><use xlink:href="#iconForward"></use></svg>
 </button>
 <div class="fn__flex-1 fn__ellipsis" id="drag"><span class="fn__none">开发版，使用前请进行备份 Development version, please backup before use</span></div>
-<div id="toolbarVIP" class="fn__flex${window.siyuan.config.readonly ? " fn__none" : ""}"></div>
+<div id="barAccount" class="toolbar__item ariaLabel${window.siyuan.config.readonly ? " fn__none" : ""}" aria-label="${window.siyuan.languages.account}">
+    <svg><use xlink:href="#iconAccount"></use></svg>
+</div>
+<div id="barSettings" class="toolbar__item ariaLabel${window.siyuan.config.readonly ? " fn__none" : ""}" aria-label="${window.siyuan.languages.config} ${updateHotkeyTip(window.siyuan.config.keymap.general.config.custom)}">
+    <svg><use xlink:href="#iconSettings"></use></svg>
+</div>
 <div id="barPlugins" class="toolbar__item ariaLabel" aria-label="${window.siyuan.languages.plugin}">
     <svg><use xlink:href="#iconPlugin"></use></svg>
 </div>
@@ -85,13 +90,13 @@ export const initBar = (app: App) => {
                     const hideElement = toolbarElement.querySelector("#" + itemId);
                     const useElement = hideElement.querySelector("use");
                     const menuOptions: IMenu = {
-                        label: itemId === "toolbarVIP" ? window.siyuan.languages.account : hideElement.getAttribute("aria-label"),
-                        icon: itemId === "toolbarVIP" ? "iconAccount" : (useElement ? useElement.getAttribute("xlink:href").substring(1) : undefined),
+                        label: hideElement.getAttribute("aria-label"),
+                        icon: useElement ? useElement.getAttribute("xlink:href").substring(1) : undefined,
                         click: () => {
                             if (itemId.startsWith("plugin")) {
                                 hideElement.dispatchEvent(new CustomEvent("click"));
                             } else {
-                                toolbarElement.dispatchEvent(new CustomEvent("click", {detail: itemId}));
+                                toolbarElement.dispatchEvent(new CustomEvent("click", { detail: itemId }));
                             }
                         }
                     };
@@ -103,7 +108,7 @@ export const initBar = (app: App) => {
                     window.siyuan.menus.menu.append(new MenuItem(menuOptions).element);
                 });
                 const rect = target.getBoundingClientRect();
-                window.siyuan.menus.menu.popup({x: rect.right, y: rect.bottom, isLeft: true});
+                window.siyuan.menus.menu.popup({ x: rect.right, y: rect.bottom, isLeft: true });
                 event.stopPropagation();
                 break;
             } else if (targetId === "barForward") {
@@ -164,14 +169,7 @@ export const initBar = (app: App) => {
                 if (rect.width === 0) {
                     rect = toolbarElement.querySelector("#barMore").getBoundingClientRect();
                 }
-                window.siyuan.menus.menu.popup({x: rect.right, y: rect.bottom, isLeft: true});
-                event.stopPropagation();
-                break;
-            } else if (targetId === "toolbarVIP") {
-                if (!window.siyuan.config.readonly) {
-                    const dialogSetting = openSetting(app);
-                    dialogSetting.element.querySelector('.b3-tab-bar [data-name="account"]').dispatchEvent(new CustomEvent("click"));
-                }
+                window.siyuan.menus.menu.popup({ x: rect.right, y: rect.bottom, isLeft: true });
                 event.stopPropagation();
                 break;
             } else if (targetId === "barSearch") {
@@ -224,7 +222,20 @@ export const initBar = (app: App) => {
                 if (rect.width === 0) {
                     rect = toolbarElement.querySelector("#barMore").getBoundingClientRect();
                 }
-                window.siyuan.menus.menu.popup({x: rect.right, y: rect.bottom, isLeft: true});
+                window.siyuan.menus.menu.popup({ x: rect.right, y: rect.bottom, isLeft: true });
+                event.stopPropagation();
+                break;
+            } else if (targetId === "barSettings") {
+                // 打开设置面板
+                openSetting(app);
+                event.stopPropagation();
+                break;
+            } else if (targetId === "barAccount") {
+                // 打开账户设置页面
+                if (!window.siyuan.config.readonly) {
+                    const dialogSetting = openSetting(app);
+                    dialogSetting.element.querySelector('.b3-tab-bar [data-name="account"]').dispatchEvent(new CustomEvent("click"));
+                }
                 event.stopPropagation();
                 break;
             }

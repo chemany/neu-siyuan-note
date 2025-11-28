@@ -47,7 +47,7 @@ func NewAppearance() *Appearance {
 		Icon:                "material",
 		CodeBlockThemeLight: "github",
 		CodeBlockThemeDark:  "base16/dracula",
-		Lang:                "en_US",
+		Lang:                "zh_CN",
 		CloseButtonBehavior: 0,
 		HideStatusBar:       false,
 		StatusBar:           &util.StatusBar{},

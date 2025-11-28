@@ -1,17 +1,28 @@
 import * as md5 from "blueimp-md5";
-import {hideMessage, showMessage} from "../dialog/message";
-import {Constants} from "../constants";
-import {fetchPost} from "../util/fetch";
-import {repos} from "./repos";
-import {confirmDialog} from "../dialog/confirmDialog";
-import {hasClosestByClassName} from "../protyle/util/hasClosest";
-import {getEventName, isInIOS} from "../protyle/util/compatibility";
-import {processSync} from "../dialog/processSystem";
-import {needSubscribe} from "../util/needSubscribe";
-import {syncGuide} from "../sync/syncGuide";
-import {hideElements} from "../protyle/ui/hideElements";
-import {getCloudURL, getIndexURL} from "./util/about";
-import {iOSPurchase} from "../util/iOSPurchase";
+import { hideMessage, showMessage } from "../dialog/message";
+import { Constants } from "../constants";
+import { fetchPost } from "../util/fetch";
+import { repos } from "./repos";
+import { confirmDialog } from "../dialog/confirmDialog";
+import { hasClosestByClassName } from "../protyle/util/hasClosest";
+import { getEventName, isInIOS } from "../protyle/util/compatibility";
+import { processSync } from "../dialog/processSystem";
+import { needSubscribe } from "../util/needSubscribe";
+import { syncGuide } from "../sync/syncGuide";
+import { hideElements } from "../protyle/ui/hideElements";
+import { getCloudURL, getIndexURL } from "./util/about";
+import { iOSPurchase } from "../util/iOSPurchase";
+
+const getCookie = (name: string): string | null => {
+    const cookies = document.cookie.split(';');
+    for (let cookie of cookies) {
+        const [cookieName, cookieValue] = cookie.trim().split('=');
+        if (cookieName === name) {
+            return cookieValue;
+        }
+    }
+    return null;
+};
 
 const genSVGBG = () => {
     let html = "";
@@ -19,7 +30,7 @@ const genSVGBG = () => {
     document.querySelectorAll("body > svg > defs > symbol").forEach((item) => {
         svgs.push(item.id);
     });
-    Array.from({length: 45}, () => {
+    Array.from({ length: 45 }, () => {
         const index = Math.floor(Math.random() * svgs.length);
         html += `<svg><use xlink:href="#${svgs[index]}"></use></svg>`;
         svgs.splice(index, 1);
@@ -80,6 +91,90 @@ ${payHTML}
 ${genSVGBG()}
 <div class="fn__flex-1 fn__hr--b"></div>`;
         }
+
+        // 优先检查Web模式的JWT token
+        const webToken = localStorage.getItem('siyuan_token') || getCookie('siyuan_token');
+        if (webToken) {
+            // 显示统一注册服务的账户信息
+            let webUserData: any = null;
+            try {
+                const storedUser = localStorage.getItem('siyuan_user');
+                if (storedUser) {
+                    webUserData = JSON.parse(storedUser);
+                }
+            } catch (e) {
+                console.error('Failed to parse web user data:', e);
+            }
+
+            if (webUserData) {
+                return `<div class="fn__flex config-account">
+<div class="config-account__center">
+    <div class="config-account__bg">
+        <div class="config-account__cover" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);"></div>
+        <div class="config-account__avatar" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); display: flex; align-items: center; justify-content: center; color: white; font-size: 48px; font-weight: bold;">
+            ${webUserData.username ? webUserData.username.charAt(0).toUpperCase() : 'U'}
+        </div>
+        <h1 class="config-account__name">
+            <span class="fn__a">${webUserData.username || 'Unknown'}</span>
+            <span class="ft__on-surface ft__smaller">统一注册服务</span>
+        </h1>
+    </div>
+    <div class="config-account__info">
+        <div class="fn__flex">
+            <button class="b3-button b3-button--text" id="refreshWebProfile">刷新信息</button>
+            <span class="fn__space"></span>
+            <button class="b3-button b3-button--cancel" id="logoutWeb">
+                ${window.siyuan.languages.logout}
+            </button>
+            <span class="fn__flex-1"></span>
+        </div>
+        <div class="fn__hr--b"></div>
+        <div class="b3-label">
+            <div class="b3-label__text">用户名</div>
+            <div class="fn__hr"></div>
+            <div class="ft__on-surface">${webUserData.username || 'N/A'}</div>
+        </div>
+        <div class="fn__hr--b"></div>
+        <div class="b3-label">
+            <div class="b3-label__text">邮箱</div>
+            <div class="fn__hr"></div>
+            <div class="ft__on-surface">${webUserData.email || 'N/A'}</div>
+        </div>
+        <div class="fn__hr--b"></div>
+        <div class="b3-label">
+            <div class="b3-label__text">工作空间</div>
+            <div class="fn__hr"></div>
+            <div class="ft__on-surface" style="font-family: monospace; font-size: 12px; word-break: break-all;">${webUserData.workspace || 'N/A'}</div>
+        </div>
+        <div class="fn__hr--b"></div>
+        <div class="b3-label">
+            <div class="b3-label__text">认证方式</div>
+            <div class="fn__hr"></div>
+            <div><span class="b3-chip b3-chip--primary">统一注册服务</span></div>
+        </div>
+    </div>
+</div>
+<div class="config-account__center config-account__center--text">
+    <div class="fn__flex-1 fn__hr--b"></div>
+    ${genSVGBG()}
+    <div class="fn__flex-1 fn__hr--b"></div>
+    <div class="b3-label">
+        <div class="b3-label__text">关于统一注册服务</div>
+        <div class="fn__hr"></div>
+        <div class="ft__on-surface ft__smaller" style="line-height: 1.6;">
+            您的账户由<strong>统一注册服务</strong>管理，可以在多个应用（思源笔记、智能日历等）之间共享。
+            退出登录后，您可以切换到其他账户登录。
+        </div>
+    </div>
+    <div class="fn__flex-1 fn__hr--b"></div>
+    ${genSVGBG()}
+    <div class="fn__flex-1 fn__hr--b"></div>
+</div>
+</div>`;
+            }
+        }
+
+        // 如果没有webToken,检查思源云用户
         if (window.siyuan.user) {
             let userTitlesHTML = "";
             if (window.siyuan.user.userTitles.length > 0) {
@@ -184,61 +279,33 @@ ${renewHTML}<div class="fn__hr--b"></div>`;
     ${activeSubscriptionHTML}
 </div></div>`;
         }
+
+        // 未登录状态 - 显示提示信息而不是登录表单
         return `<div class="fn__flex config-account">
-<div class="b3-form__space config-account__center">
-    <div class="config-account__form" id="form1">
-        <div class="b3-form__icon">
-            <svg class="b3-form__icon-icon"><use xlink:href="#iconAccount"></use></svg>
-            <input id="userName" class="b3-text-field fn__block b3-form__icon-input" placeholder="${window.siyuan.languages.accountName}">
-        </div>
-        <div class="fn__hr--b"></div>
-        <div class="b3-form__icon">
-            <svg class="b3-form__icon-icon"><use xlink:href="#iconLock"></use></svg>
-            <input type="password" id="userPassword" class="b3-text-field b3-form__icon-input fn__block" placeholder="${window.siyuan.languages.password}">
-        </div>
-        <div class="fn__hr--b"></div>
-        <div class="b3-form__icon">
-            <svg class="b3-form__icon-icon"><use xlink:href="#iconFocus"></use></svg>
-            <select class="b3-select b3-form__icon-input fn__block" id="cloudRegion">
-                <option value="0"${window.siyuan.config.cloudRegion === 0 ? " selected" : ""}>${window.siyuan.languages.cloudRegionChina}</option>
-                <option value="1"${window.siyuan.config.cloudRegion === 1 ? " selected" : ""}>${window.siyuan.languages.cloudRegionNorthAmerica}</option>
-            </select>
-        </div>
-        <div class="b3-form__img fn__none">
-            <div class="fn__hr--b"></div>
-            <img id="captchaImg" class="fn__pointer" style="top: 17px;height:26px">
-            <input id="captcha" class="b3-text-field fn__block" placeholder="${window.siyuan.languages.captcha}">
-        </div>
-        <div class="fn__hr--b"></div>
-        <label class="ft__smaller ft__on-surface fn__flex">
-            <span class="fn__space"></span>
-            <input type="checkbox" class="b3-switch fn__flex-center" id="agreeLogin">
-            <span class="fn__space"></span>
-            <span>${window.siyuan.languages.accountTip}</span>
-        </label>
-        <div class="fn__hr--b"></div>
-        <button id="login" disabled class="b3-button fn__block">${window.siyuan.languages.login}</button>
-        <div class="fn__hr--b"></div>
-        <div class="ft__center">
-            <a href="${getCloudURL("forget-pwd")}" class="b3-button b3-button--cancel" target="_blank">${window.siyuan.languages.forgetPassword}</a>
-            <span class="fn__space${window.siyuan.config.system.container === "ios" ? " fn__none" : ""}"></span>
-            <a href="${getCloudURL("register")}" class="b3-button b3-button--cancel${window.siyuan.config.system.container === "ios" ? " fn__none" : ""}" target="_blank">${window.siyuan.languages.register}</a>
-        </div>
-    </div>
-    <div class="fn__none config-account__form" id="form2">
-        <div class="b3-form__icon">
-            <svg class="b3-form__icon-icon"><use xlink:href="#iconLock"></use></svg>
-            <input id="twofactorAuthCode" class="b3-text-field fn__block b3-form__icon-input" placeholder="${window.siyuan.languages.twoFactorCaptcha}">
-        </div>
-        <div class="fn__hr--b"></div>
-        <button id="login2" class="b3-button fn__block">${window.siyuan.languages.login}</button>
+<div class="config-account__center">
+    <div class="config-account__bg" style="padding: 60px 40px; text-align: center;">
+        <div style="font-size: 48px; margin-bottom: 20px;">🔐</div>
+        <h2 style="color: #333; margin-bottom: 16px;">请先登录</h2>
+        <p style="color: #666; line-height: 1.6; margin-bottom: 24px;">
+            您需要使用统一注册服务账户登录后才能查看账户信息。
+        </p>
+        <button class="b3-button b3-button--outline" onclick="window.location.href='/stage/login.html'" style="padding: 12px 32px;">
+            前往登录
+        </button>
     </div>
 </div>
-<div class="config-account__center config-account__center--text${window.siyuan.config.system.container === "ios" ? " fn__none" : ""}">
+<div class="config-account__center config-account__center--text">
     <div class="fn__flex-1 fn__hr--b"></div>
     ${genSVGBG()}
-    <div class="fn__flex-1 fn__hr--b"></div>    
-    ${payHTML}
+    <div class="fn__flex-1 fn__hr--b"></div>
+    <div class="b3-label">
+        <div class="b3-label__text">关于统一注册服务</div>
+        <div class="fn__hr"></div>
+        <div class="ft__on-surface ft__smaller" style="line-height: 1.6;">
+            思源笔记现在使用<strong>统一注册服务</strong>进行账户管理。<br>
+            您可以使用同一个账户登录多个应用（思源笔记、智能日历等）。
+        </div>
+    </div>
     <div class="fn__flex-1 fn__hr--b"></div>
     ${genSVGBG()}
     <div class="fn__flex-1 fn__hr--b"></div>
@@ -246,6 +313,52 @@ ${renewHTML}<div class="fn__hr--b"></div>`;
 </div>`;
     },
     bindEvent: (element: Element) => {
+        // Web模式下的登出按钮处理
+        const logoutWebButton = element.querySelector("#logoutWeb");
+        if (logoutWebButton) {
+            logoutWebButton.addEventListener("click", () => {
+                if (!confirm('确定要退出登录吗？\n\n退出后您可以切换到其他账户登录。')) {
+                    return;
+                }
+
+                const token = localStorage.getItem('siyuan_token') || getCookie('siyuan_token');
+                if (token) {
+                    // 调用登出API
+                    fetchPost("/api/web/auth/logout", {}, () => {
+                        // 清除本地token
+                        localStorage.removeItem('siyuan_token');
+                        localStorage.removeItem('siyuan_user');
+                        document.cookie = 'siyuan_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+
+                        showMessage('已退出登录', 3000);
+
+                        // 跳转到登录页
+                        setTimeout(() => {
+                            window.location.href = '/stage/login.html';
+                        }, 1000);
+                    });
+                }
+            });
+        }
+
+        // Web模式下的刷新按钮处理
+        const refreshWebButton = element.querySelector("#refreshWebProfile");
+        if (refreshWebButton) {
+            refreshWebButton.addEventListener("click", () => {
+                const token = localStorage.getItem('siyuan_token') || getCookie('siyuan_token');
+                if (token) {
+                    fetchPost("/api/web/auth/profile", {}, (response) => {
+                        if (response.code === 0 && response.data) {
+                            localStorage.setItem('siyuan_user', JSON.stringify(response.data));
+                            element.innerHTML = account.genHTML();
+                            account.bindEvent(element);
+                            showMessage('账户信息已刷新', 3000);
+                        }
+                    });
+                }
+            });
+        }
+
         element.querySelectorAll('[data-action="iOSPay"]').forEach(item => {
             item.addEventListener("click", () => {
                 iOSPurchase(item.getAttribute("data-type"));
@@ -317,13 +430,13 @@ ${renewHTML}<div class="fn__hr--b"></div>`;
             const activationCodeElement = element.querySelector("#activationCode");
             activationCodeElement?.addEventListener("click", () => {
                 const activationCodeInput = (activationCodeElement.previousElementSibling as HTMLInputElement);
-                fetchPost("/api/account/checkActivationcode", {data: activationCodeInput.value}, (response) => {
+                fetchPost("/api/account/checkActivationcode", { data: activationCodeInput.value }, (response) => {
                     if (0 !== response.code) {
                         activationCodeInput.value = "";
                     }
                     confirmDialog(window.siyuan.languages.activationCode, response.msg, () => {
                         if (response.code === 0) {
-                            fetchPost("/api/account/useActivationcode", {data: (activationCodeElement.previousElementSibling as HTMLInputElement).value}, () => {
+                            fetchPost("/api/account/useActivationcode", { data: (activationCodeElement.previousElementSibling as HTMLInputElement).value }, () => {
                                 refreshElement.dispatchEvent(new CustomEvent("click"));
                             });
                         }
@@ -477,35 +590,7 @@ ${renewHTML}<div class="fn__hr--b"></div>`;
         if (repos.element) {
             repos.element.innerHTML = "";
         }
-        if (window.siyuan.config.system.container === "ios") {
-            return;
-        }
-        let html = "";
-        if (window.siyuan.config.account.displayVIP) {
-            if (window.siyuan.user) {
-                if (window.siyuan.user.userSiYuanProExpireTime === -1) { // 终身会员
-                    html = `<div class="toolbar__item ariaLabel" aria-label="${window.siyuan.languages.account12}">${Constants.SIYUAN_IMAGE_VIP}</div>`;
-                } else if (window.siyuan.user.userSiYuanProExpireTime > 0) { // 订阅中
-                    if (window.siyuan.user.userSiYuanSubscriptionPlan === 2) { // 试用订阅
-                        html = `<div class="toolbar__item ariaLabel" aria-label="${window.siyuan.languages.account3}"><svg><use xlink:href="#iconVIP"></use></svg></div>`;
-                    } else { // 正常订阅
-                        html = `<div class="toolbar__item ariaLabel" aria-label="${window.siyuan.languages.account10}"><svg class="ft__secondary"><use xlink:href="#iconVIP"></use></svg></div>`;
-                    }
-                } else if (window.siyuan.user.userSiYuanSubscriptionStatus === -1) { // 未订阅
-                    html = `<div class="toolbar__item ariaLabel" aria-label="${window.siyuan.languages.freeSub}"><svg class="ft__error"><use xlink:href="#iconVIP"></use></svg></div>`;
-                }
-                if (window.siyuan.user.userSiYuanOneTimePayStatus === 1) { // 一次性付费功能特性
-                    html += `<div class="toolbar__item ariaLabel" aria-label="${window.siyuan.languages.onepay}"><svg class="ft__success"><use xlink:href="#iconVIP"></use></svg></div>`;
-                }
-            } else { // 未登录
-                html = `<div class="toolbar__item ariaLabel" aria-label="${window.siyuan.languages.freeSub}"><svg class="ft__error"><use xlink:href="#iconVIP"></use></svg></div>`;
-            }
-        }
-        if (window.siyuan.config.account.displayTitle && window.siyuan.user) {
-            window.siyuan.user.userTitles.forEach(item => {
-                html += `<div class="toolbar__item ariaLabel" aria-label="${item.name}：${item.desc}">${item.icon}</div>`;
-            });
-        }
-        document.getElementById("toolbarVIP").innerHTML = html;
+        // toolbarVIP 元素已移除，不再显示VIP状态图标
+        // 所有功能已免费，无需显示订阅状态
     }
 };

@@ -1,38 +1,39 @@
-import {Layout} from "./index";
-import {Wnd} from "./Wnd";
-import {Tab} from "./Tab";
-import {Model} from "./Model";
-import {Graph} from "./dock/Graph";
-import {Editor} from "../editor";
-import {Files} from "./dock/Files";
-import {Outline} from "./dock/Outline";
-import {Bookmark} from "./dock/Bookmark";
-import {Tag} from "./dock/Tag";
-import {getAllModels, getAllTabs, getAllWnds} from "./getAll";
-import {Asset} from "../asset";
-import {Search} from "../search";
-import {Dock} from "./dock";
-import {focusByOffset, focusByRange, getSelectionOffset} from "../protyle/util/selection";
-import {hideElements} from "../protyle/ui/hideElements";
-import {fetchPost} from "../util/fetch";
-import {hasClosestBlock, hasClosestByClassName} from "../protyle/util/hasClosest";
-import {Constants} from "../constants";
-import {saveScroll} from "../protyle/scroll/saveScroll";
-import {Backlink} from "./dock/Backlink";
-import {openFileById} from "../editor/util";
-import {isWindow} from "../util/functions";
+import { Layout } from "./index";
+import { Wnd } from "./Wnd";
+import { Tab } from "./Tab";
+import { Model } from "./Model";
+import { Graph } from "./dock/Graph";
+import { Editor } from "../editor";
+import { Files } from "./dock/Files";
+import { Outline } from "./dock/Outline";
+import { Bookmark } from "./dock/Bookmark";
+import { Tag } from "./dock/Tag";
+import { getAllModels, getAllTabs, getAllWnds } from "./getAll";
+import { Asset } from "../asset";
+import { Search } from "../search";
+import { Dock } from "./dock";
+import { focusByOffset, focusByRange, getSelectionOffset } from "../protyle/util/selection";
+import { hideElements } from "../protyle/ui/hideElements";
+import { fetchPost } from "../util/fetch";
+import { hasClosestBlock, hasClosestByClassName } from "../protyle/util/hasClosest";
+import { Constants } from "../constants";
+import { saveScroll } from "../protyle/scroll/saveScroll";
+import { Backlink } from "./dock/Backlink";
+import { AI } from "./dock/AI";
+import { openFileById } from "../editor/util";
+import { isWindow } from "../util/functions";
 /// #if !BROWSER
-import {setTabPosition} from "../window/setHeader";
+import { setTabPosition } from "../window/setHeader";
 /// #endif
-import {showMessage} from "../dialog/message";
-import {getIdZoomInByPath} from "../util/pathName";
-import {Custom} from "./dock/Custom";
-import {newCardModel} from "../card/newCardTab";
-import {App} from "../index";
-import {afterLoadPlugin} from "../plugin/loader";
-import {setTitle} from "../dialog/processSystem";
-import {newCenterEmptyTab, resizeTabs} from "./tabUtil";
-import {setStorageVal} from "../protyle/util/compatibility";
+import { showMessage } from "../dialog/message";
+import { getIdZoomInByPath } from "../util/pathName";
+import { Custom } from "./dock/Custom";
+import { newCardModel } from "../card/newCardTab";
+import { App } from "../index";
+import { afterLoadPlugin } from "../plugin/loader";
+import { setTitle } from "../dialog/processSystem";
+import { newCenterEmptyTab, resizeTabs } from "./tabUtil";
+import { setStorageVal } from "../protyle/util/compatibility";
 
 export const setPanelFocus = (element: Element, isSaveLayout = true) => {
     if (element.getAttribute("data-type") === "wnd") {
@@ -167,7 +168,7 @@ export const resetLayout = () => {
     if (window.siyuan.config.readonly) {
         window.location.reload();
     } else {
-        fetchPost("/api/system/setUILayout", {layout: {}}, () => {
+        fetchPost("/api/system/setUILayout", { layout: {} }, () => {
             window.siyuan.storage[Constants.LOCAL_FILEPOSITION] = {};
             setStorageVal(Constants.LOCAL_FILEPOSITION, window.siyuan.storage[Constants.LOCAL_FILEPOSITION]);
             window.siyuan.storage[Constants.LOCAL_DIALOGPOSITION] = {};
@@ -276,8 +277,11 @@ export const getAllLayout = () => {
 const initInternalDock = (dockItem: Config.IUILayoutDockTab[]) => {
     dockItem.forEach((existSubItem) => {
         if (existSubItem.hotkeyLangId) {
-            existSubItem.title = window.siyuan.languages[existSubItem.hotkeyLangId];
-            existSubItem.hotkey = window.siyuan.config.keymap.general[existSubItem.hotkeyLangId].custom;
+            existSubItem.title = window.siyuan.languages[existSubItem.hotkeyLangId] || existSubItem.hotkeyLangId;
+            if (existSubItem.hotkeyLangId === "ai") {
+                existSubItem.title = "AI Chat";
+            }
+            existSubItem.hotkey = window.siyuan.config.keymap.general[existSubItem.hotkeyLangId]?.custom || "";
         }
     });
 };
@@ -289,13 +293,34 @@ const JSONToDock = (json: any, app: App) => {
     json.right.data.forEach((existItem: Config.IUILayoutDockTab[]) => {
         initInternalDock(existItem);
     });
+    let hasAI = false;
+    json.right.data.forEach((item: Config.IUILayoutDockTab[]) => {
+        item.forEach((subItem) => {
+            if (subItem.type === "ai") {
+                hasAI = true;
+            }
+        });
+    });
+    if (!hasAI) {
+        if (!json.right.data[0]) {
+            json.right.data[0] = [];
+        }
+        json.right.data[0].push({
+            type: "ai",
+            size: { width: 320, height: 0 },
+            show: true,
+            icon: "iconSparkles",
+            hotkeyLangId: "ai",
+        });
+        initInternalDock(json.right.data[0]);
+    }
     json.bottom.data.forEach((existItem: Config.IUILayoutDockTab[]) => {
         initInternalDock(existItem);
     });
     window.siyuan.layout.centerLayout = window.siyuan.layout.layout.children[0].children[1] as Layout;
-    window.siyuan.layout.leftDock = new Dock({position: "Left", data: json.left, app});
-    window.siyuan.layout.rightDock = new Dock({position: "Right", data: json.right, app});
-    window.siyuan.layout.bottomDock = new Dock({position: "Bottom", data: json.bottom, app});
+    window.siyuan.layout.leftDock = new Dock({ position: "Left", data: json.left, app });
+    window.siyuan.layout.rightDock = new Dock({ position: "Right", data: json.right, app });
+    window.siyuan.layout.bottomDock = new Dock({ position: "Bottom", data: json.bottom, app });
 };
 
 const removedTabs: Tab[] = [];
@@ -309,7 +334,7 @@ export const JSONToCenter = (
     if (json.instance === "Layout") {
         // TabA 向右分屏后向下分屏，依次关闭右侧、上侧分屏无法移除 layout 嵌套，故在此解决 https://github.com/siyuan-note/siyuan/issues/12196
         while (json.children.length === 1 && json.children[0].instance === "Layout" &&
-        json.children[0].type === "normal" && json.children[0].children.length === 1) {
+            json.children[0].type === "normal" && json.children[0].children.length === 1) {
             json.children = json.children[0].children;
         }
         if (!layout) {
@@ -409,6 +434,8 @@ export const JSONToCenter = (
         }));
     } else if (json.instance === "Tag") {
         (layout as Tab).addModel(new Tag(app, (layout as Tab)));
+    } else if (json.instance === "AI") {
+        (layout as Tab).addModel(new AI(app, (layout as Tab)));
     } else if (json.instance === "Search") {
         (layout as Tab).addModel(new Search({
             app,
@@ -599,6 +626,8 @@ export const layoutToJSON = (layout: Layout | Wnd | Tab | Model, json: any, brea
         json.instance = "Outline";
     } else if (layout instanceof Tag) {
         json.instance = "Tag";
+    } else if (layout instanceof AI) {
+        json.instance = "AI";
     } else if (layout instanceof Search) {
         json.instance = "Search";
         json.config = layout.config;
@@ -979,7 +1008,7 @@ export const adjustLayout = (layout: Layout = window.siyuan.layout.centerLayout.
             item.element.style.minWidth = "";
         }
     });
-    if (layout.direction === "lr" && layout.element.scrollWidth > layout.element.clientWidth + 2 ) {
+    if (layout.direction === "lr" && layout.element.scrollWidth > layout.element.clientWidth + 2) {
         let index = Math.ceil(screen.width / 8);
         while (index > 0) {
             let width = 0;

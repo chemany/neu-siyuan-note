@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SiYuan AI 增强版测试页面</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            border-radius: 10px;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .section {
+            background: white;
+            margin: 20px 0;
+            padding: 25px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .api-button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 5px;
+            margin: 10px 5px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .api-button:hover {
+            background: #0056b3;
+        }
+        .result {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 5px;
+            padding: 15px;
+            margin-top: 15px;
+            min-height: 100px;
+            font-family: monospace;
+            white-space: pre-wrap;
+        }
+        .status {
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .status.warning {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .feature-list {
+            list-style-type: none;
+            padding: 0;
+        }
+        .feature-list li {
+            background: #e9ecef;
+            margin: 5px 0;
+            padding: 10px 15px;
+            border-radius: 5px;
+            border-left: 4px solid #28a745;
+        }
+        .input-group {
+            margin: 15px 0;
+        }
+        .input-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        .input-group input, .input-group textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            box-sizing: border-box;
+        }
+        .input-group textarea {
+            min-height: 100px;
+            resize: vertical;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🚀 SiYuan AI 增强版</h1>
+        <p>基于灵枢笔记架构的向量化与AI文档分析功能</p>
+    </div>
+
+    <div class="section">
+        <h2>📋 实现功能</h2>
+        <ul class="feature-list">
+            <li>✅ 分离的LLM和向量化模型配置</li>
+            <li>✅ SiliconFlow向量化服务支持</li>
+            <li>✅ OpenAI向量化服务支持</li>
+            <li>✅ 语义搜索功能 (semanticSearch)</li>
+            <li>✅ 笔记本摘要生成 (generateNotebookSummary)</li>
+            <li>✅ 批量向量化 (batchVectorizeNotebook)</li>
+            <li>✅ 向量化配置管理API</li>
+        </ul>
+    </div>
+
+    <div class="section">
+        <h2>⚙️ AI配置状态</h2>
+        <div id="ai-status">
+            <div class="status warning">
+                <strong>LLM服务:</strong> 未配置 - 请设置 OPENAI_API_KEY 环境变量
+            </div>
+            <div class="status warning">
+                <strong>向量化服务:</strong> 未配置 - 请设置 SIYUAN_EMBEDDING_API_KEY 环境变量
+            </div>
+        </div>
+        <button class="api-button" onclick="testEmbeddingConfig()">测试向量化配置</button>
+        <button class="api-button" onclick="getEmbeddingModels()">获取可用模型</button>
+        <button class="api-button" onclick="testEmbeddingConnection()">测试连接</button>
+    </div>
+
+    <div class="section">
+        <h2>🔍 AI功能测试</h2>
+
+        <div class="input-group">
+            <label for="searchQuery">语义搜索查询:</label>
+            <input type="text" id="searchQuery" placeholder="输入搜索内容..." value="人工智能">
+        </div>
+        <div class="input-group">
+            <label for="notebookId">笔记本ID:</label>
+            <input type="text" id="notebookId" placeholder="笔记本ID (可选)" value="">
+        </div>
+        <button class="api-button" onclick="testSemanticSearch()">执行语义搜索</button>
+
+        <div class="input-group">
+            <label for="summaryNotebook">笔记本摘要:</label>
+            <input type="text" id="summaryNotebook" placeholder="笔记本ID" value="">
+        </div>
+        <button class="api-button" onclick="testNotebookSummary()">生成笔记本摘要</button>
+
+        <div class="input-group">
+            <label for="vectorizeNotebook">批量向量化:</label>
+            <input type="text" id="vectorizeNotebook" placeholder="笔记本ID" value="">
+        </div>
+        <button class="api-button" onclick="testBatchVectorize()">批量向量化</button>
+    </div>
+
+    <div class="section">
+        <h2>📄 API响应</h2>
+        <div id="result" class="result">点击上方按钮测试AI功能...</div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:6806/api/ai';
+
+        function updateResult(message) {
+            document.getElementById('result').textContent = message;
+        }
+
+        function showError(error) {
+            updateResult('❌ 错误: ' + error.message);
+        }
+
+        async function testEmbeddingConfig() {
+            try {
+                updateResult('🔄 正在获取向量化配置...');
+                const response = await fetch(`${API_BASE}/getEmbeddingConfig`);
+                const data = await response.json();
+                updateResult('✅ 向量化配置获取成功:\n\n' + JSON.stringify(data, null, 2));
+            } catch (error) {
+                showError(error);
+            }
+        }
+
+        async function getEmbeddingModels() {
+            try {
+                const provider = 'siliconflow'; // 默认使用SiliconFlow
+                updateResult(`🔄 正在获取${provider}的可用模型...`);
+                const response = await fetch(`${API_BASE}/getEmbeddingModels`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ provider })
+                });
+                const data = await response.json();
+                updateResult(`✅ ${provider}可用模型:\n\n` + JSON.stringify(data, null, 2));
+            } catch (error) {
+                showError(error);
+            }
+        }
+
+        async function testEmbeddingConnection() {
+            try {
+                updateResult('🔄 正在测试向量化服务连接...');
+                const response = await fetch(`${API_BASE}/testEmbeddingConnection`);
+                const data = await response.json();
+                updateResult('✅ 向量化服务连接测试成功:\n\n' + JSON.stringify(data, null, 2));
+            } catch (error) {
+                showError(error);
+            }
+        }
+
+        async function testSemanticSearch() {
+            const query = document.getElementById('searchQuery').value;
+            const notebookId = document.getElementById('notebookId').value;
+
+            if (!query.trim()) {
+                updateResult('❌ 请输入搜索查询内容');
+                return;
+            }
+
+            try {
+                updateResult('🔄 正在执行语义搜索...');
+                const response = await fetch(`${API_BASE}/semanticSearch`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        query: query.trim(),
+                        notebookId: notebookId || undefined,
+                        limit: 10
+                    })
+                });
+                const data = await response.json();
+                updateResult('✅ 语义搜索结果:\n\n' + JSON.stringify(data, null, 2));
+            } catch (error) {
+                showError(error);
+            }
+        }
+
+        async function testNotebookSummary() {
+            const notebookId = document.getElementById('summaryNotebook').value;
+
+            if (!notebookId.trim()) {
+                updateResult('❌ 请输入笔记本ID');
+                return;
+            }
+
+            try {
+                updateResult('🔄 正在生成笔记本摘要...');
+                const response = await fetch(`${API_BASE}/generateNotebookSummary`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ notebookId: notebookId.trim() })
+                });
+                const data = await response.json();
+                updateResult('✅ 笔记本摘要生成成功:\n\n' + JSON.stringify(data, null, 2));
+            } catch (error) {
+                showError(error);
+            }
+        }
+
+        async function testBatchVectorize() {
+            const notebookId = document.getElementById('vectorizeNotebook').value;
+
+            if (!notebookId.trim()) {
+                updateResult('❌ 请输入笔记本ID');
+                return;
+            }
+
+            try {
+                updateResult('🔄 正在批量向量化笔记本内容...');
+                const response = await fetch(`${API_BASE}/batchVectorizeNotebook`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ notebookId: notebookId.trim() })
+                });
+                const data = await response.json();
+                updateResult('✅ 批量向量化完成:\n\n' + JSON.stringify(data, null, 2));
+            } catch (error) {
+                showError(error);
+            }
+        }
+
+        // 页面加载时检查配置
+        window.onload = function() {
+            testEmbeddingConfig();
+        };
+    </script>
+</body>
+</html>

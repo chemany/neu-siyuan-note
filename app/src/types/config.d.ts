@@ -1768,6 +1768,7 @@ declare namespace Config {
         | IUILayoutTabGraph
         | IUILayoutTabOutline
         | IUILayoutTabTag
+        | IUILayoutTabAI
         | IUILayoutTabSearch;
 
     /**
@@ -2075,6 +2076,16 @@ declare namespace Config {
          * Object name
          */
         instance: "Tag";
+    }
+
+    /**
+     * SiYuan AI tab
+     */
+    export interface IUILayoutTabAI {
+        /**
+         * Object name
+         */
+        instance: "AI";
     }
 
     /**

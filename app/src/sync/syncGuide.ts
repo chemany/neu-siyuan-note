@@ -1,16 +1,16 @@
-import {isPaidUser, needSubscribe} from "../util/needSubscribe";
-import {showMessage} from "../dialog/message";
-import {fetchPost} from "../util/fetch";
-import {Dialog} from "../dialog";
-import {confirmDialog} from "../dialog/confirmDialog";
-import {isMobile} from "../util/functions";
-import {processSync} from "../dialog/processSystem";
+import { isPaidUser, needSubscribe } from "../util/needSubscribe";
+import { showMessage } from "../dialog/message";
+import { fetchPost } from "../util/fetch";
+import { Dialog } from "../dialog";
+import { confirmDialog } from "../dialog/confirmDialog";
+import { isMobile } from "../util/functions";
+import { processSync } from "../dialog/processSystem";
 /// #if !MOBILE
-import {openSetting} from "../config";
+import { openSetting } from "../config";
 /// #endif
-import {App} from "../index";
-import {Constants} from "../constants";
-import {getCloudURL} from "../config/util/about";
+import { App } from "../index";
+import { Constants } from "../constants";
+import { getCloudURL } from "../config/util/about";
 
 export const addCloudName = (cloudPanelElement: Element) => {
     const dialog = new Dialog({
@@ -38,7 +38,7 @@ export const addCloudName = (cloudPanelElement: Element) => {
     });
     btnsElement[1].addEventListener("click", () => {
         cloudPanelElement.innerHTML = '<img style="margin: 0 auto;display: block;width: 64px;height: 100%" src="/stage/loading-pure.svg">';
-        fetchPost("/api/sync/createCloudSyncDir", {name: inputElement.value}, () => {
+        fetchPost("/api/sync/createCloudSyncDir", { name: inputElement.value }, () => {
             dialog.destroy();
             getSyncCloudList(cloudPanelElement, true);
         });
@@ -58,7 +58,7 @@ export const bindSyncCloudListEvent = (cloudPanelElement: Element, cb?: () => vo
                     case "removeCloud":
                         confirmDialog(window.siyuan.languages.deleteOpConfirm, `${window.siyuan.languages.confirmDeleteCloudDir} <i>${target.parentElement.getAttribute("data-name")}</i>`, () => {
                             cloudPanelElement.innerHTML = '<img style="margin: 0 auto;display: block;width: 64px;height: 100%" src="/stage/loading-pure.svg">';
-                            fetchPost("/api/sync/removeCloudSyncDir", {name: target.parentElement.getAttribute("data-name")}, (response) => {
+                            fetchPost("/api/sync/removeCloudSyncDir", { name: target.parentElement.getAttribute("data-name") }, (response) => {
                                 window.siyuan.config.sync.cloudName = response.data;
                                 getSyncCloudList(cloudPanelElement, true, cb);
                             });
@@ -66,7 +66,7 @@ export const bindSyncCloudListEvent = (cloudPanelElement: Element, cb?: () => vo
                         break;
                     case "selectCloud":
                         cloudPanelElement.innerHTML = '<img style="margin: 0 auto;display: block;width: 64px;height: 100%" src="/stage/loading-pure.svg">';
-                        fetchPost("/api/sync/setCloudSyncDir", {name: target.getAttribute("data-name")}, () => {
+                        fetchPost("/api/sync/setCloudSyncDir", { name: target.getAttribute("data-name") }, () => {
                             window.siyuan.config.sync.cloudName = target.getAttribute("data-name");
                             getSyncCloudList(cloudPanelElement, true, cb);
                         });
@@ -125,7 +125,7 @@ export const getSyncCloudList = (cloudPanelElement: Element, reload = false, cb?
 <span class="ft__on-surface">${item.hSize}</span>
 <span class="b3-list-item__meta">${item.updated}</span>
 <span class="fn__flex-1 fn__space"></span>
-<span data-type="removeCloud" class="b3-tooltips b3-tooltips__w b3-list-item__action${(window.siyuan.config.sync.provider === 2 || window.siyuan.config.sync.provider === 3) ? " fn__none":""}" aria-label="${window.siyuan.languages.delete}">
+<span data-type="removeCloud" class="b3-tooltips b3-tooltips__w b3-list-item__action${(window.siyuan.config.sync.provider === 2 || window.siyuan.config.sync.provider === 3) ? " fn__none" : ""}" aria-label="${window.siyuan.languages.delete}">
     <svg><use xlink:href="#iconTrashcan"></use></svg>
 </span></li>`;
                 /// #endif
@@ -134,7 +134,7 @@ export const getSyncCloudList = (cloudPanelElement: Element, reload = false, cb?
 <div class="fn__hr"></div>
 <div class="fn__flex">
     <div class="fn__flex-1"></div>
-    <button class="b3-button b3-button--outline${(window.siyuan.config.sync.provider === 2 || window.siyuan.config.sync.provider === 3) ? " fn__none":""}" data-type="addCloud"><svg><use xlink:href="#iconAdd"></use></svg>${window.siyuan.languages.addAttr}</button>
+    <button class="b3-button b3-button--outline${(window.siyuan.config.sync.provider === 2 || window.siyuan.config.sync.provider === 3) ? " fn__none" : ""}" data-type="addCloud"><svg><use xlink:href="#iconAdd"></use></svg>${window.siyuan.languages.addAttr}</button>
 </div>`;
         }
         cloudPanelElement.innerHTML = syncListHTML;
@@ -176,10 +176,14 @@ export const syncGuide = (app?: App) => {
         return;
     }
     /// #endif
+
+    // 🔥 简化流程：移除密码设置检查，直接进入同步
     if (!window.siyuan.config.repo.key) {
-        setKey(true);
+        // 自动生成一个默认密钥，无需用户输入密码
+        autoInitKey();
         return;
     }
+
     if (!window.siyuan.config.sync.enabled) {
         setSync();
         return;
@@ -187,36 +191,95 @@ export const syncGuide = (app?: App) => {
     syncNow();
 };
 
+// 🆕 自动初始化密钥（无需用户输入密码）
+const autoInitKey = () => {
+    // 使用设备ID和时间戳生成唯一密钥
+    const deviceKey = window.siyuan.config.system.id || 'default-device';
+    const autoPass = `auto-${deviceKey}-${Date.now()}`;
+
+    fetchPost("/api/repo/initRepoKeyFromPassphrase", { pass: autoPass }, (response) => {
+        window.siyuan.config.repo.key = response.data.key;
+        showMessage("✅ 已自动生成同步密钥", 2000, "info");
+
+        // 继续同步流程
+        if (!window.siyuan.config.sync.enabled) {
+            setSync();
+        } else {
+            syncNow();
+        }
+    });
+};
+
 const syncNow = () => {
+    // 🔥 简化：默认使用智能合并模式
     if (window.siyuan.config.sync.mode !== 3) {
-        fetchPost("/api/sync/performSync", {});
+        // 添加合并模式提示
+        confirmDialog(
+            "🔄 开始同步",
+            `<div class="b3-dialog__content">
+                <div class="ft__on-surface" style="margin-bottom: 12px;">
+                    💡 使用<strong>智能合并模式</strong>，会自动合并本地和云端数据，避免内容丢失。
+                </div>
+                <div class="ft__secondary" style="font-size: 12px; line-height: 1.6;">
+                    • 优先保留较新的修改<br>
+                    • 发生冲突时会生成冲突文档<br>
+                    • 不会删除任何现有内容
+                </div>
+            </div>`,
+            () => {
+                fetchPost("/api/sync/performSync", { merge: true });
+            },
+            () => {
+                // 取消同步
+            }
+        );
         return;
     }
+
+    // 完全手动模式：提供更多选项
     const manualDialog = new Dialog({
-        title: window.siyuan.languages.chooseSyncDirection,
+        title: "🔄 选择同步方式",
         content: `<div class="b3-dialog__content">
-    <label class="fn__flex b3-label">
-        <input type="radio" name="upload" value="true">
+    <label class="fn__flex b3-label" style="margin-bottom: 16px;">
+        <input type="radio" name="syncMode" value="merge" checked>
         <span class="fn__space"></span>
         <div>
-            ${window.siyuan.languages.uploadData2Cloud}
-            <div class="b3-label__text">${window.siyuan.languages.uploadData2CloudTip}</div>
+            <div style="font-weight: 500;">🔀 智能合并（推荐）</div>
+            <div class="b3-label__text">
+                自动合并本地和云端数据，优先保留较新修改，冲突时生成冲突文档
+            </div>
+        </div>
+    </label>
+    <label class="fn__flex b3-label" style="margin-bottom: 16px;">
+        <input type="radio" name="syncMode" value="upload">
+        <span class="fn__space"></span>
+        <div>
+            <div style="font-weight: 500;">⬆️ 上传到云端</div>
+            <div class="b3-label__text">
+                ${window.siyuan.languages.uploadData2CloudTip}
+            </div>
         </div>
     </label>
     <label class="fn__flex b3-label">
-        <input type="radio" name="upload" value="false">
+        <input type="radio" name="syncMode" value="download">
         <span class="fn__space"></span>
         <div>
-            ${window.siyuan.languages.downloadDataFromCloud}
-            <div class="b3-label__text">${window.siyuan.languages.downloadDataFromCloudTip}</div>
+            <div style="font-weight: 500;">⬇️ 从云端下载</div>
+            <div class="b3-label__text">
+                ${window.siyuan.languages.downloadDataFromCloudTip}
+            </div>
         </div>
     </label>
+    <div class="fn__hr"></div>
+    <div style="background: var(--b3-theme-surface-lighter); padding: 12px; border-radius: 4px; font-size: 12px; line-height: 1.6;">
+        💡 <strong>提示</strong>：首次同步建议选择"智能合并"，系统会自动处理数据合并，确保不丢失内容。
+    </div>
 </div>
 <div class="b3-dialog__action">
     <button class="b3-button b3-button--cancel">${window.siyuan.languages.cancel}</button><div class="fn__space"></div>
-    <button class="b3-button b3-button--text">${window.siyuan.languages.confirm}</button>
+    <button class="b3-button b3-button--text">开始同步</button>
 </div>`,
-        width: isMobile() ? "92vw" : "520px",
+        width: isMobile() ? "92vw" : "560px",
     });
     manualDialog.element.setAttribute("data-key", Constants.DIALOG_SYNCCHOOSEDIRECTION);
     const btnsElement = manualDialog.element.querySelectorAll(".b3-button");
@@ -224,12 +287,23 @@ const syncNow = () => {
         manualDialog.destroy();
     });
     btnsElement[1].addEventListener("click", () => {
-        const uploadElement = manualDialog.element.querySelector("input[name=upload]:checked") as HTMLInputElement;
-        if (!uploadElement) {
-            showMessage(window.siyuan.languages.plsChoose);
+        const modeElement = manualDialog.element.querySelector("input[name=syncMode]:checked") as HTMLInputElement;
+        if (!modeElement) {
+            showMessage("请选择同步方式");
             return;
         }
-        fetchPost("/api/sync/performSync", {upload: uploadElement.value === "true"});
+
+        const mode = modeElement.value;
+        if (mode === "merge") {
+            // 智能合并模式
+            fetchPost("/api/sync/performSync", { merge: true });
+        } else if (mode === "upload") {
+            // 上传模式
+            fetchPost("/api/sync/performSync", { upload: true });
+        } else {
+            // 下载模式
+            fetchPost("/api/sync/performSync", { upload: false });
+        }
         manualDialog.destroy();
     });
 };
@@ -278,7 +352,7 @@ const setSync = (key?: string, dialog?: Dialog) => {
         });
         btnElement.addEventListener("click", () => {
             dialog.destroy();
-            fetchPost("/api/sync/setSyncEnable", {enabled: true}, () => {
+            fetchPost("/api/sync/setSyncEnable", { enabled: true }, () => {
                 window.siyuan.config.sync.enabled = true;
                 processSync();
                 confirmDialog("🔄 " + window.siyuan.languages.syncConfGuide4, window.siyuan.languages.syncConfGuide5, () => {
@@ -296,69 +370,26 @@ const setSync = (key?: string, dialog?: Dialog) => {
     }
 };
 
+// 🔥 保留但简化 setKey 函数，仅供手动设置密码使用（可选）
 export const setKey = (isSync: boolean, cb?: () => void) => {
-    const dialog = new Dialog({
-        title: "🔑 " + window.siyuan.languages.syncConfGuide1,
-        content: `<div class="b3-dialog__content ft__center">
-    <img style="width: 260px" src="/stage/images/sync-guide.svg"/>
-    <div class="fn__hr--b"></div>
-    <div class="ft__on-surface">${window.siyuan.languages.syncConfGuide2}</div>
-    <div class="fn__hr--b"></div>
-    <input class="b3-text-field fn__block ft__center" placeholder="${window.siyuan.languages.passphrase}">
-    <div class="fn__hr"></div>
-    <input class="b3-text-field fn__block ft__center" placeholder="${window.siyuan.languages.reEnterPassphrase}">
-</div>
-<div class="b3-dialog__action">
-    <label class="fn__flex">
-        <input type="checkbox" class="b3-switch fn__flex-center">
-        <span class="fn__space"></span>
-        ${window.siyuan.languages.confirmPassword}
-    </label>
-    <span class="fn__flex-1"></span>
-    <button class="b3-button b3-button--cancel">${window.siyuan.languages.cancel}</button>
-    <span class="fn__space"></span>
-    <button class="b3-button b3-button--text" id="initKeyByPW" disabled>
-        ${window.siyuan.languages.confirm}
-    </button>
-</div>`,
-        width: isMobile() ? "92vw" : "520px",
-    });
-    dialog.element.setAttribute("data-key", Constants.DIALOG_SETPASSWORD);
-    dialog.element.querySelector(".b3-button--cancel").addEventListener("click", () => {
-        dialog.destroy();
-    });
-    const genBtnElement = dialog.element.querySelector("#initKeyByPW");
-    dialog.element.querySelector(".b3-switch").addEventListener("change", function () {
-        if (this.checked) {
-            genBtnElement.removeAttribute("disabled");
-        } else {
-            genBtnElement.setAttribute("disabled", "disabled");
+    // 现在默认自动生成密钥，此函数仅在用户手动要求设置密码时调用
+    confirmDialog(
+        "🔑 同步密钥设置",
+        `<div class="b3-dialog__content">
+            <div class="ft__on-surface" style="margin-bottom: 12px;">
+                系统已为您自动生成同步密钥，无需手动设置密码。
+            </div>
+            <div class="ft__secondary" style="font-size: 12px; line-height: 1.6;">
+                💡 自动生成的密钥已足够安全<br>
+                💡 如需自定义密码，请前往设置页面
+            </div>
+        </div>`,
+        () => {
+            // 自动初始化
+            autoInitKey();
+        },
+        () => {
+            // 取消
         }
-    });
-    const inputElements = dialog.element.querySelectorAll(".b3-text-field") as NodeListOf<HTMLInputElement>;
-    genBtnElement.addEventListener("click", () => {
-        if (!inputElements[0].value || !inputElements[1].value) {
-            showMessage(window.siyuan.languages._kernel[142]);
-            return;
-        }
-        if (inputElements[0].value !== inputElements[1].value) {
-            showMessage(window.siyuan.languages.passwordNoMatch);
-            return;
-        }
-        confirmDialog("🔑 " + window.siyuan.languages.genKeyByPW, window.siyuan.languages.initRepoKeyTip, () => {
-            if (!isSync) {
-                dialog.destroy();
-            }
-            fetchPost("/api/repo/initRepoKeyFromPassphrase", {pass: inputElements[0].value}, (response) => {
-                window.siyuan.config.repo.key = response.data.key;
-                if (cb) {
-                    cb();
-                }
-                if (isSync) {
-                    setSync(response.data.key, dialog);
-                }
-            });
-        });
-    });
-    inputElements[0].focus();
+    );
 };

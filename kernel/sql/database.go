@@ -301,11 +301,19 @@ func initHistoryDBConnection() {
 }
 
 func initHistoryDBTables() {
+	// 暂时注释掉FTS5表的创建，因为系统SQLite版本不支持FTS5
+	// TODO: 升级SQLite版本或使用自定义编译版本
+	/*
 	historyDB.Exec("DROP TABLE histories_fts_case_insensitive")
 	_, err := historyDB.Exec("CREATE VIRTUAL TABLE histories_fts_case_insensitive USING fts5(id UNINDEXED, type UNINDEXED, op UNINDEXED, title, content, path UNINDEXED, created UNINDEXED, tokenize=\"siyuan case_insensitive\")")
 	if err != nil {
 		logging.LogFatalf(logging.ExitCodeReadOnlyDatabase, "create table [histories_fts_case_insensitive] failed: %s", err)
 	}
+	*/
+
+	// 创建一个替代的普通表用于基础历史记录功能
+	historyDB.Exec("CREATE TABLE IF NOT EXISTS histories_fts_backup (id TEXT, type TEXT, op TEXT, title TEXT, content TEXT, path TEXT, created TEXT)")
+	logging.LogInfo("FTS5功能已暂时禁用，使用基础历史记录功能")
 }
 
 var initAssetContentDatabaseLock = sync.Mutex{}

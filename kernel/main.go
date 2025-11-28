@@ -19,6 +19,7 @@
 package main
 
 import (
+	"github.com/siyuan-note/logging"
 	"github.com/siyuan-note/siyuan/kernel/cache"
 	"github.com/siyuan-note/siyuan/kernel/job"
 	"github.com/siyuan-note/siyuan/kernel/model"
@@ -41,6 +42,16 @@ func main() {
 
 	model.BootSyncData()
 	model.InitBoxes()
+
+	// 初始化Web多用户认证系统
+	if err := model.InitUserStore(); err != nil {
+		logging.LogErrorf("Failed to initialize user store: %s", err)
+	}
+	model.InitWebAuthService()
+
+	// 初始化统一注册服务连接
+	model.InitUnifiedAuthService()
+
 	model.LoadFlashcards()
 	util.LoadAssetsTexts()
 

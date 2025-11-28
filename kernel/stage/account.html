@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>账户设置 - 思源笔记</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 700px;
+            margin: 0 auto;
+        }
+
+        .account-card {
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 28px;
+            margin-bottom: 8px;
+        }
+
+        .header p {
+            opacity: 0.9;
+            font-size: 14px;
+        }
+
+        .section {
+            padding: 25px 30px;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        .section:last-child {
+            border-bottom: none;
+        }
+
+        .section-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .info-grid {
+            display: grid;
+            grid-template-columns: 140px 1fr;
+            gap: 15px;
+        }
+
+        .info-label {
+            font-weight: 500;
+            color: #666;
+        }
+
+        .info-value {
+            color: #333;
+        }
+
+        .workspace-path {
+            font-family: 'Courier New', monospace;
+            background: #f5f5f5;
+            padding: 10px;
+            border-radius: 6px;
+            font-size: 13px;
+            word-break: break-all;
+            border-left: 3px solid #667eea;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .badge-active {
+            background: #4caf50;
+            color: white;
+        }
+
+        .badge-unified {
+            background: #2196f3;
+            color: white;
+        }
+
+        .actions {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.3s;
+            flex: 1;
+            min-width: 120px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-secondary {
+            background: #e0e0e0;
+            color: #333;
+        }
+
+        .btn-secondary:hover {
+            background: #d0d0d0;
+        }
+
+        .btn-danger {
+            background: #f44336;
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background: #d32f2f;
+        }
+
+        .info-box {
+            background: #e3f2fd;
+            border-left: 4px solid #2196f3;
+            padding: 15px;
+            border-radius: 4px;
+            margin-top: 15px;
+        }
+
+        .info-box p {
+            color: #666;
+            line-height: 1.6;
+            font-size: 14px;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #999;
+        }
+
+        @media (max-width: 600px) {
+            .info-grid {
+                grid-template-columns: 1fr;
+                gap: 10px;
+            }
+            
+            .info-label {
+                font-weight: 600;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="account-card">
+            <div class="header">
+                <h1>📱 账户设置</h1>
+                <p>Powered by 统一注册服务</p>
+            </div>
+
+            <div class="section">
+                <div class="section-title">👤 账户信息</div>
+                <div id="account-info" class="loading">加载中...</div>
+            </div>
+
+            <div class="section">
+                <div class="section-title">💾 数据存储</div>
+                <div id="workspace-info" class="loading">加载中...</div>
+            </div>
+
+            <div class="section">
+                <div class="section-title">🔧 账户操作</div>
+                <div class="actions">
+                    <button class="btn btn-primary" onclick="refreshProfile()">🔄 刷新信息</button>
+                    <button class="btn btn-secondary" onclick="changePassword()">🔑 修改密码</button>
+                    <button class="btn btn-danger" onclick="logout()">🚪 退出登录</button>
+                </div>
+            </div>
+
+            <div class="section" style="background: #f9f9f9;">
+                <div class="section-title">ℹ️ 关于统一注册服务</div>
+                <p style="color: #666; line-height: 1.6;">
+                    您的账户由<strong>统一注册服务</strong>管理，可以在多个应用（思源笔记、智能日历等）之间共享。<br>
+                    退出登录后，您可以切换到其他账户登录。
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = window.location.origin;
+
+        // 获取Token
+        function getToken() {
+            const cookies = document.cookie.split(';');
+            for (let cookie of cookies) {
+                const [name, value] = cookie.trim().split('=');
+                if (name === 'siyuan_token') {
+                    return value;
+                }
+            }
+            return localStorage.getItem('siyuan_token');
+        }
+
+        // 格式化日期
+        function formatDate(dateString) {
+            const date = new Date(dateString);
+            return date.toLocaleString('zh-CN', {
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        }
+
+        // 加载用户信息
+        async function loadProfile() {
+            try {
+                const token = getToken();
+                if (!token) {
+                    alert('未找到登录令牌，请重新登录');
+                    window.location.href = '/stage/login.html';
+                    return;
+                }
+
+                const response = await fetch(`${API_BASE}/api/web/auth/profile`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                const result = await response.json();
+                
+                if (result.code === 0 && result.data) {
+                    const user = result.data;
+                    
+                    // 显示账户信息
+                    document.getElementById('account-info').innerHTML = `
+                        <div class="info-grid">
+                            <div class="info-label">用户名</div>
+                            <div class="info-value"><strong>${user.username}</strong></div>
+                            
+                            <div class="info-label">邮箱</div>
+                            <div class="info-value">${user.email}</div>
+                            
+                            <div class="info-label">用户ID</div>
+                            <div class="info-value" style="font-family: monospace; font-size: 12px;">${user.id}</div>
+                            
+                            <div class="info-label">认证方式</div>
+                            <div class="info-value">
+                                <span class="badge badge-unified">统一注册服务</span>
+                            </div>
+                            
+                            <div class="info-label">账户状态</div>
+                            <div class="info-value">
+                                ${user.is_active ? '<span class="badge badge-active">活跃</span>' : '<span class="badge" style="background: #ff9800; color: white;">未激活</span>'}
+                            </div>
+                            
+                            <div class="info-label">创建时间</div>
+                            <div class="info-value">${formatDate(user.created_at)}</div>
+                        </div>
+                    `;
+                    
+                    // 显示工作空间信息
+                    document.getElementById('workspace-info').innerHTML = `
+                        <div class="info-label" style="margin-bottom: 8px;">工作空间路径</div>
+                        <div class="workspace-path">${user.workspace}</div>
+                        <div class="info-box">
+                            <p>📂 您的所有笔记数据都存储在此目录下，完全独立于其他用户。</p>
+                        </div>
+                    `;
+                } else {
+                    alert('获取用户信息失败: ' + result.msg);
+                    document.getElementById('account-info').innerHTML = '<p style="color: red;">加载失败</p>';
+                    document.getElementById('workspace-info').innerHTML = '<p style="color: red;">加载失败</p>';
+                }
+            } catch (error) {
+                console.error('加载用户信息错误:', error);
+                alert('加载用户信息失败，请检查网络连接');
+                document.getElementById('account-info').innerHTML = '<p style="color: red;">加载失败</p>';
+                document.getElementById('workspace-info').innerHTML = '<p style="color: red;">加载失败</p>';
+            }
+        }
+
+        // 刷新信息
+        function refreshProfile() {
+            document.getElementById('account-info').innerHTML = '<div class="loading">加载中...</div>';
+            document.getElementById('workspace-info').innerHTML = '<div class="loading">加载中...</div>';
+            loadProfile();
+        }
+
+        // 修改密码
+        function changePassword() {
+            const currentPassword = prompt('请输入当前密码:');
+            if (!currentPassword) return;
+
+            const newPassword = prompt('请输入新密码 (至少6个字符，包含字母和数字):');
+            if (!newPassword) return;
+
+            const confirmPassword = prompt('请再次输入新密码:');
+            if (newPassword !== confirmPassword) {
+                alert('两次输入的密码不一致');
+                return;
+            }
+
+            // 验证密码格式
+            if (newPassword.length < 6 || !/(?=.*[a-zA-Z])(?=.*\d)/.test(newPassword)) {
+                alert('密码必须至少6个字符，并包含字母和数字');
+                return;
+            }
+
+            const token = getToken();
+            fetch(`${API_BASE}/api/web/auth/change-password`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                    old_password: currentPassword,
+                    new_password: newPassword
+                })
+            })
+            .then(res => res.json())
+            .then(result => {
+                if (result.code === 0) {
+                    alert('密码修改成功！请使用新密码重新登录。');
+                    logout();
+                } else {
+                    alert('密码修改失败: ' + result.msg);
+                }
+            })
+            .catch(error => {
+                console.error('修改密码错误:', error);
+                alert('修改密码失败');
+            });
+        }
+
+        // 退出登录
+        function logout() {
+            if (!confirm('确定要退出登录吗？\n\n退出后您可以切换到其他账户登录。')) {
+                return;
+            }
+
+            const token = getToken();
+            
+            // 调用登出API
+            fetch(`${API_BASE}/api/web/auth/logout`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                }
+            })
+            .finally(() => {
+                // 清除本地token
+                localStorage.removeItem('siyuan_token');
+                localStorage.removeItem('siyuan_user');
+                document.cookie = 'siyuan_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+                
+                alert('✅ 已退出登录！\n\n现在您可以使用其他账户登录。');
+                
+                // 跳转到登录页
+                window.location.href = '/stage/login.html';
+            });
+        }
+
+        // 页面加载时获取用户信息
+        window.addEventListener('DOMContentLoaded', loadProfile);
+    </script>
+</body>
+</html>
