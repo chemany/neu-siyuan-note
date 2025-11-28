@@ -9,33 +9,110 @@
 *.syso
 .DS_Store
 .eslintcache
+
+# Dependencies
 app/node_modules
+node_modules/
+**/node_modules/
+
+# Build directories
 app/stage/build
 app/build
+app/dist
 app/src/types/dist
+electron/dist
+dist/
+build/
+out/
+
+# Kernel binaries
 app/kernel*
 app/SiYuan-Kernel
+**/*.bin
+**/SiYuan
+
+# Platform-specific
 ios
+android
+*.app
+*.deb
+*.rpm
+*.snap
+
+# Test and profiling
 pprof
-
-# Test binary, build with `go test -c`
 *.test
-
-# Output of the go coverage tool, specifically when used with LiteIDE
+*.prof
 *.out
-electron/dist
+coverage/
+.nyc_output
 
 # IDE
 .idea/
 .vscode/
+*.swp
+*.swo
+*~
 
-# Log
-logs
+# Log files
+logs/
 *.log*
+npm-debug.log*
+yarn-debug.log*
 
-# NPM Package
+# NPM/Package managers
 package-lock.json
 yarn.lock
+pnpm-lock.yaml
 
-# Workflows
-**/__pycache__
+# Cache
+.cache/
+.npm/
+.eslintcache
+.stylelintcache
+.nyc_output/
+
+# Workspace and data (remove sensitive data)
+workspace/
+data/temp/
+data/history/
+data/storage/
+**/snippets/
+
+# OS files
+Thumbs.db
+.DS_Store
+.Trash-*
+Desktop.ini
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.swp
+*.swo
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Build outputs and go specific
+vendor/
+*.mod.sum
+go.work
+
+# Python
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Additional SiYuan specific
+conf/app/
+**/conf/system/conf.json
+resources/*.asar
+stage/
