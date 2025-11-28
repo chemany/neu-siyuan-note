@@ -111,7 +111,8 @@ func queryHistory(query string, args ...interface{}) (*sql.Rows, error) {
 }
 
 func deleteOutdatedHistories(tx *sql.Tx, before int64, context map[string]interface{}) (err error) {
-	stmt := "DELETE FROM histories_fts_case_insensitive WHERE CAST(created AS INTEGER) < ?"
+	// 使用备份表代替FTS5表
+	stmt := "DELETE FROM histories_fts_backup WHERE CAST(created AS INTEGER) < ?"
 	if err = execStmtTx(tx, stmt, before); err != nil {
 		return
 	}
@@ -119,7 +120,8 @@ func deleteOutdatedHistories(tx *sql.Tx, before int64, context map[string]interf
 }
 
 const (
-	HistoriesFTSCaseInsensitiveInsert = "INSERT INTO histories_fts_case_insensitive (id, type, op, title, content, path, created) VALUES %s"
+	// 修改为使用备份表
+	HistoriesFTSCaseInsensitiveInsert = "INSERT INTO histories_fts_backup (id, type, op, title, content, path, created) VALUES %s"
 	HistoriesPlaceholder              = "(?, ?, ?, ?, ?, ?, ?)"
 )
 

@@ -42,6 +42,15 @@ var (
 )
 
 func HookDesktopUIProcJob() {
+	// 在web模式下禁用UI进程检测，保持后端持久运行
+	if util.ContainerStd == util.Container && "dev" != util.Mode {
+		// 检查是否设置了web模式环境变量
+		if os.Getenv("SIYUAN_WEB_MODE") == "true" {
+			logging.LogInfof("web mode detected, skipping UI process detection")
+			return
+		}
+	}
+
 	if util.ContainerStd != util.Container || "dev" == util.Mode {
 		return
 	}

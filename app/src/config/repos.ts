@@ -1,11 +1,11 @@
-import {isPaidUser, needSubscribe} from "../util/needSubscribe";
-import {fetchPost} from "../util/fetch";
-import {showMessage} from "../dialog/message";
-import {bindSyncCloudListEvent, getSyncCloudList} from "../sync/syncGuide";
-import {processSync} from "../dialog/processSystem";
-import {getCloudURL} from "./util/about";
-import {openByMobile} from "../protyle/util/compatibility";
-import {confirmDialog} from "../dialog/confirmDialog";
+import { isPaidUser, needSubscribe } from "../util/needSubscribe";
+import { fetchPost } from "../util/fetch";
+import { showMessage } from "../dialog/message";
+import { bindSyncCloudListEvent, getSyncCloudList } from "../sync/syncGuide";
+import { processSync } from "../dialog/processSystem";
+import { getCloudURL } from "./util/about";
+import { openByMobile } from "../protyle/util/compatibility";
+import { confirmDialog } from "../dialog/confirmDialog";
 
 const renderProvider = (provider: number) => {
     if (provider === 0) {
@@ -333,7 +333,7 @@ const bindProviderEvent = () => {
                     timeout: timeout,
                     concurrentReqs: concurrentReqs,
                 };
-                fetchPost("/api/sync/setSyncProviderS3", {s3}, () => {
+                fetchPost("/api/sync/setSyncProviderS3", { s3 }, () => {
                     window.siyuan.config.sync.s3 = s3;
                 });
             } else if (window.siyuan.config.sync.provider === 3) {
@@ -366,7 +366,7 @@ const bindProviderEvent = () => {
                     timeout: timeout,
                     concurrentReqs: concurrentReqs,
                 };
-                fetchPost("/api/sync/setSyncProviderWebDAV", {webdav}, () => {
+                fetchPost("/api/sync/setSyncProviderWebDAV", { webdav }, () => {
                     window.siyuan.config.sync.webdav = webdav;
                 });
             } else if (window.siyuan.config.sync.provider === 4) {
@@ -390,7 +390,7 @@ const bindProviderEvent = () => {
                     timeout: timeout,
                     concurrentReqs: concurrentReqs,
                 };
-                fetchPost("/api/sync/setSyncProviderLocal", {local}, (response) => {
+                fetchPost("/api/sync/setSyncProviderLocal", { local }, (response) => {
                     if (response.code === 0) {
                         window.siyuan.config.sync.local = response.data.local;
 
@@ -421,7 +421,6 @@ export const repos = {
     </div>
     <span class="fn__space"></span>
     <select id="syncProvider" class="b3-select fn__flex-center fn__size200">
-        <option value="0" ${window.siyuan.config.sync.provider === 0 ? "selected" : ""}>SiYuan</option>
         <option value="2" ${window.siyuan.config.sync.provider === 2 ? "selected" : ""}>S3</option>
         <option value="3" ${window.siyuan.config.sync.provider === 3 ? "selected" : ""}>WebDAV</option>
         <option value="4" ${window.siyuan.config.sync.provider === 4 ? "selected" : ""}>${window.siyuan.languages.localFileSystem}</option>
@@ -516,7 +515,7 @@ export const repos = {
                 showMessage(window.siyuan.languages._kernel[123]);
                 return;
             }
-            fetchPost("/api/sync/setSyncEnable", {enabled: switchElement.checked}, () => {
+            fetchPost("/api/sync/setSyncEnable", { enabled: switchElement.checked }, () => {
                 window.siyuan.config.sync.enabled = switchElement.checked;
                 processSync();
             });
@@ -531,27 +530,27 @@ export const repos = {
                 interval = 43200;
             }
             syncIntervalElement.value = interval.toString();
-            fetchPost("/api/sync/setSyncInterval", {interval: interval}, () => {
+            fetchPost("/api/sync/setSyncInterval", { interval: interval }, () => {
                 window.siyuan.config.sync.interval = interval;
                 processSync();
             });
         });
         const syncPerceptionElement = repos.element.querySelector("#syncPerception") as HTMLInputElement;
         syncPerceptionElement.addEventListener("change", () => {
-            fetchPost("/api/sync/setSyncPerception", {enabled: syncPerceptionElement.checked}, () => {
+            fetchPost("/api/sync/setSyncPerception", { enabled: syncPerceptionElement.checked }, () => {
                 window.siyuan.config.sync.perception = syncPerceptionElement.checked;
                 processSync();
             });
         });
         const switchConflictElement = repos.element.querySelector("#generateConflictDoc") as HTMLInputElement;
         switchConflictElement.addEventListener("change", () => {
-            fetchPost("/api/sync/setSyncGenerateConflictDoc", {enabled: switchConflictElement.checked}, () => {
+            fetchPost("/api/sync/setSyncGenerateConflictDoc", { enabled: switchConflictElement.checked }, () => {
                 window.siyuan.config.sync.generateConflictDoc = switchConflictElement.checked;
             });
         });
         const syncModeElement = repos.element.querySelector("#syncMode") as HTMLSelectElement;
         syncModeElement.addEventListener("change", () => {
-            fetchPost("/api/sync/setSyncMode", {mode: parseInt(syncModeElement.value, 10)}, () => {
+            fetchPost("/api/sync/setSyncMode", { mode: parseInt(syncModeElement.value, 10) }, () => {
                 if (syncModeElement.value === "1" && window.siyuan.config.sync.provider === 0 && window.siyuan.config.system.container !== "docker") {
                     syncPerceptionElement.parentElement.classList.remove("fn__none");
                 } else {
@@ -568,7 +567,7 @@ export const repos = {
         const syncConfigElement = repos.element.querySelector("#reposCloudSyncList");
         const syncProviderElement = repos.element.querySelector("#syncProvider") as HTMLSelectElement;
         syncProviderElement.addEventListener("change", () => {
-            fetchPost("/api/sync/setSyncProvider", {provider: parseInt(syncProviderElement.value, 10)}, (response) => {
+            fetchPost("/api/sync/setSyncProvider", { provider: parseInt(syncProviderElement.value, 10) }, (response) => {
                 if (response.code === 1) {
                     showMessage(response.msg);
                     syncProviderElement.value = "0";

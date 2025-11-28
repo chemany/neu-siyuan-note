@@ -926,3 +926,21 @@ func containsLimitClause(stmt string) bool {
 		strings.Contains(strings.ToLower(stmt), "\nlimit ") ||
 		strings.Contains(strings.ToLower(stmt), "\tlimit ")
 }
+
+// GetBlocksByBox retrieves all blocks belonging to a specific box (notebook)
+func GetBlocksByBox(boxID string) (ret []*Block, err error) {
+	sqlStmt := "SELECT * FROM blocks WHERE box = ?"
+	rows, err := query(sqlStmt, boxID)
+	if err != nil {
+		logging.LogErrorf("sql query [%s] failed: %s", sqlStmt, err)
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		if block := scanBlockRows(rows); nil != block {
+			ret = append(ret, block)
+		}
+	}
+	return ret, nil
+}

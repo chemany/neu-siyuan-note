@@ -306,7 +306,7 @@ func serveSnippets(ginServer *gin.Engine) {
 }
 
 func serveAppearance(ginServer *gin.Engine) {
-	siyuan := ginServer.Group("", model.CheckAuth)
+	siyuan := ginServer.Group("", model.CheckWebAuth) // 使用Web认证中间件
 
 	siyuan.Handle("GET", "/", func(c *gin.Context) {
 		userAgentHeader := c.GetHeader("User-Agent")
@@ -576,39 +576,51 @@ func serveWebSocket(ginServer *gin.Engine) {
 
 	util.WebSocketServer.HandleConnect(func(s *melody.Session) {
 		//logging.LogInfof("ws check auth for [%s]", s.Request.RequestURI)
-		authOk := true
+		authOk := false
 
-		if "" != model.Conf.AccessAuthCode {
-			session, err := sessionStore.Get(s.Request, "siyuan")
-			if err != nil {
-				authOk = false
-				logging.LogErrorf("get cookie failed: %s", err)
-			} else {
-				val := session.Values["data"]
-				if nil == val {
-					authOk = false
-				} else {
-					sess := &util.SessionData{}
-					err = gulu.JSON.UnmarshalJSON([]byte(val.(string)), sess)
-					if err != nil {
-						authOk = false
-						logging.LogErrorf("unmarshal cookie failed: %s", err)
-					} else {
-						workspaceSess := util.GetWorkspaceSession(sess)
-						authOk = workspaceSess.AccessAuthCode == model.Conf.AccessAuthCode
-					}
-				}
-			}
-		}
-
-		// REF: https://github.com/siyuan-note/siyuan/issues/11364
-		if !authOk {
+		// Web Mode下优先使用JWT认证
+		if os.Getenv("SIYUAN_WEB_MODE") == "true" {
 			if token := model.ParseXAuthToken(s.Request); token != nil {
 				authOk = token.Valid && model.IsValidRole(model.GetClaimRole(model.GetTokenClaims(token)), []model.Role{
 					model.RoleAdministrator,
 					model.RoleEditor,
 					model.RoleReader,
 				})
+			}
+		} else {
+			// 传统模式下的认证逻辑
+			if "" != model.Conf.AccessAuthCode {
+				session, err := sessionStore.Get(s.Request, "siyuan")
+				if err != nil {
+					authOk = false
+					logging.LogErrorf("get cookie failed: %s", err)
+				} else {
+					val := session.Values["data"]
+					if nil == val {
+						authOk = false
+					} else {
+						sess := &util.SessionData{}
+						err = gulu.JSON.UnmarshalJSON([]byte(val.(string)), sess)
+						if err != nil {
+							authOk = false
+							logging.LogErrorf("unmarshal cookie failed: %s", err)
+						} else {
+							workspaceSess := util.GetWorkspaceSession(sess)
+							authOk = workspaceSess.AccessAuthCode == model.Conf.AccessAuthCode
+						}
+					}
+				}
+			}
+
+			// REF: https://github.com/siyuan-note/siyuan/issues/11364
+			if !authOk {
+				if token := model.ParseXAuthToken(s.Request); token != nil {
+					authOk = token.Valid && model.IsValidRole(model.GetClaimRole(model.GetTokenClaims(token)), []model.Role{
+						model.RoleAdministrator,
+						model.RoleEditor,
+						model.RoleReader,
+					})
+				}
 			}
 		}
 

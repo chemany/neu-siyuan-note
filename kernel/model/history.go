@@ -448,7 +448,7 @@ func FullTextSearchHistory(query, box, op string, typ, page int) (ret []string, 
 
 	offset := (page - 1) * fileHistoryPageSize
 
-	table := "histories_fts_case_insensitive"
+	table := "histories_fts_backup" // 使用备份表代替FTS5表
 	stmt := "SELECT DISTINCT created FROM " + table + " WHERE "
 	stmt += buildSearchHistoryQueryFilter(query, op, box, table, typ)
 	countStmt := strings.ReplaceAll(stmt, "SELECT DISTINCT created", "SELECT COUNT(DISTINCT created) AS total")
@@ -481,7 +481,7 @@ func FullTextSearchHistoryItems(created, query, box, op string, typ int) (ret []
 		query = stringQuery(query)
 	}
 
-	table := "histories_fts_case_insensitive"
+	table := "histories_fts_backup" // 使用备份表代替FTS5表
 	stmt := "SELECT * FROM " + table + " WHERE "
 	stmt += buildSearchHistoryQueryFilter(query, op, box, table, typ)
 

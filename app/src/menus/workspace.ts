@@ -1,12 +1,12 @@
-import {MenuItem} from "./Menu";
+import { MenuItem } from "./Menu";
 /// #if !BROWSER
-import {ipcRenderer} from "electron";
+import { ipcRenderer } from "electron";
 /// #endif
-import {openHistory} from "../history/history";
-import {getOpenNotebookCount, originalPath, pathPosix, useShell} from "../util/pathName";
-import {fetchNewDailyNote, mountHelp, newDailyNote} from "../util/mount";
-import {fetchPost} from "../util/fetch";
-import {Constants} from "../constants";
+import { openHistory } from "../history/history";
+import { getOpenNotebookCount, originalPath, pathPosix, useShell } from "../util/pathName";
+import { fetchNewDailyNote, mountHelp, newDailyNote } from "../util/mount";
+import { fetchPost } from "../util/fetch";
+import { Constants } from "../constants";
 import {
     isInAndroid,
     isInHarmony,
@@ -15,25 +15,25 @@ import {
     setStorageVal,
     writeText
 } from "../protyle/util/compatibility";
-import {openCard} from "../card/openCard";
-import {openSetting} from "../config";
-import {getAllDocks} from "../layout/getAll";
-import {exportLayout, getAllLayout} from "../layout/util";
-import {getDockByType} from "../layout/tabUtil";
-import {exitSiYuan, lockScreen} from "../dialog/processSystem";
-import {showMessage} from "../dialog/message";
-import {unicode2Emoji} from "../emoji";
-import {Dock} from "../layout/dock";
-import {escapeHtml} from "../util/escape";
-import {viewCards} from "../card/viewCards";
-import {Dialog} from "../dialog";
-import {hasClosestByClassName} from "../protyle/util/hasClosest";
-import {confirmDialog} from "../dialog/confirmDialog";
-import {App} from "../index";
-import {isBrowser} from "../util/functions";
-import {openRecentDocs} from "../business/openRecentDocs";
+import { openCard } from "../card/openCard";
+import { openSetting } from "../config";
+import { getAllDocks } from "../layout/getAll";
+import { exportLayout, getAllLayout } from "../layout/util";
+import { getDockByType } from "../layout/tabUtil";
+import { exitSiYuan, lockScreen } from "../dialog/processSystem";
+import { showMessage } from "../dialog/message";
+import { unicode2Emoji } from "../emoji";
+import { Dock } from "../layout/dock";
+import { escapeHtml } from "../util/escape";
+import { viewCards } from "../card/viewCards";
+import { Dialog } from "../dialog";
+import { hasClosestByClassName } from "../protyle/util/hasClosest";
+import { confirmDialog } from "../dialog/confirmDialog";
+import { App } from "../index";
+import { isBrowser } from "../util/functions";
+import { openRecentDocs } from "../business/openRecentDocs";
 import * as dayjs from "dayjs";
-import {upDownHint} from "../util/upDownHint";
+import { upDownHint } from "../util/upDownHint";
 
 const editLayout = (layoutName?: string) => {
     const dialog = new Dialog({
@@ -152,17 +152,7 @@ export const workspaceMenu = (app: App, rect: DOMRect) => {
     fetchPost("/api/system/getWorkspaces", {}, (response) => {
         window.siyuan.menus.menu.remove();
         window.siyuan.menus.menu.element.setAttribute("data-name", Constants.MENU_BAR_WORKSPACE);
-        if (!window.siyuan.config.readonly) {
-            window.siyuan.menus.menu.append(new MenuItem({
-                id: "config",
-                label: window.siyuan.languages.config,
-                icon: "iconSettings",
-                accelerator: window.siyuan.config.keymap.general.config.custom,
-                click: () => {
-                    openSetting(app);
-                }
-            }).element);
-        }
+        // 移除了"设置"选项，因为已经移到顶部菜单栏
         const dockMenu: IMenu[] = [];
         getAllDocks().forEach(item => {
             dockMenu.push({
@@ -176,7 +166,7 @@ export const workspaceMenu = (app: App, rect: DOMRect) => {
             });
         });
         if (!window.siyuan.config.readonly) {
-            dockMenu.push({id: "separator_1", type: "separator"});
+            dockMenu.push({ id: "separator_1", type: "separator" });
             dockMenu.push(togglePinDock("leftDock", window.siyuan.layout.leftDock, "iconLeftTop"));
             dockMenu.push(togglePinDock("rightDock", window.siyuan.layout.rightDock, "iconRightTop"));
             dockMenu.push(togglePinDock("bottomDock", window.siyuan.layout.bottomDock, "iconBottomLeft"));
@@ -204,7 +194,7 @@ export const workspaceMenu = (app: App, rect: DOMRect) => {
                     if (localPath.filePaths.length === 0) {
                         return;
                     }
-                    fetchPost("/api/system/checkWorkspaceDir", {path: localPath.filePaths[0]}, (response) => {
+                    fetchPost("/api/system/checkWorkspaceDir", { path: localPath.filePaths[0] }, (response) => {
                         if (response.data.isWorkspace) {
                             openWorkspace(localPath.filePaths[0]);
                         } else {
@@ -215,7 +205,7 @@ export const workspaceMenu = (app: App, rect: DOMRect) => {
                     });
                 }
             }];
-            workspaceSubMenu.push({id: "separator_1", type: "separator"});
+            workspaceSubMenu.push({ id: "separator_1", type: "separator" });
             response.data.forEach((item: IWorkspace) => {
                 workspaceSubMenu.push(workspaceItem(item) as IMenu);
             });
@@ -294,7 +284,7 @@ export const workspaceMenu = (app: App, rect: DOMRect) => {
                     });
                 }
             }];
-            workspaceSubMenu.push({id: "separator_1", type: "separator"});
+            workspaceSubMenu.push({ id: "separator_1", type: "separator" });
             response.data.forEach((item: IWorkspace) => {
                 workspaceSubMenu.push({
                     iconHTML: "",
@@ -306,9 +296,9 @@ export const workspaceMenu = (app: App, rect: DOMRect) => {
                             if (hasClosestByClassName(event.target as Element, "b3-menu__action")) {
                                 event.preventDefault();
                                 event.stopPropagation();
-                                fetchPost("/api/system/removeWorkspaceDir", {path: item.path}, () => {
+                                fetchPost("/api/system/removeWorkspaceDir", { path: item.path }, () => {
                                     confirmDialog(window.siyuan.languages.deleteOpConfirm, window.siyuan.languages.removeWorkspacePhysically.replace("${x}", item.path), () => {
-                                        fetchPost("/api/system/removeWorkspaceDirPhysically", {path: item.path});
+                                        fetchPost("/api/system/removeWorkspaceDirPhysically", { path: item.path });
                                     }, undefined, true);
                                 });
                                 return;
@@ -344,7 +334,7 @@ export const workspaceMenu = (app: App, rect: DOMRect) => {
             }
         }];
         if (window.siyuan.storage[Constants.LOCAL_LAYOUTS].length > 0) {
-            layoutSubMenu.push({id: "separator_1", type: "separator"});
+            layoutSubMenu.push({ id: "separator_1", type: "separator" });
             layoutSubMenu.push({
                 iconHTML: "",
                 type: "empty",
@@ -354,7 +344,7 @@ export const workspaceMenu = (app: App, rect: DOMRect) => {
                     const genListHTML = () => {
                         let html = "";
                         window.siyuan.storage[Constants.LOCAL_LAYOUTS].sort((a: ISaveLayout, b: ISaveLayout) => {
-                            return a.name.localeCompare(b.name, undefined, {numeric: true});
+                            return a.name.localeCompare(b.name, undefined, { numeric: true });
                         }).forEach((item: ISaveLayout) => {
                             if (inputElement.value === "" || item.name.toLowerCase().indexOf(inputElement.value.toLowerCase()) > -1) {
                                 html += `<div data-name="${item.name}" class="b3-list-item b3-list-item--narrow b3-list-item--hide-action ${html ? "" : "b3-list-item--focus"}">
@@ -381,7 +371,7 @@ export const workspaceMenu = (app: App, rect: DOMRect) => {
                         } else if (event.key === "Enter") {
                             const currentElement = listElement.querySelector(".b3-list-item--focus");
                             if (currentElement) {
-                                listElement.dispatchEvent(new CustomEvent("click", {detail: currentElement.getAttribute("data-name")}));
+                                listElement.dispatchEvent(new CustomEvent("click", { detail: currentElement.getAttribute("data-name") }));
                             }
                         }
                     });
@@ -417,7 +407,7 @@ export const workspaceMenu = (app: App, rect: DOMRect) => {
                                 }
                             });
                             if (itemData) {
-                                fetchPost("/api/system/setUILayout", {layout: itemData.layout}, () => {
+                                fetchPost("/api/system/setUILayout", { layout: itemData.layout }, () => {
                                     if (itemData.filesPaths) {
                                         window.siyuan.storage[Constants.LOCAL_FILESPATHS] = itemData.filesPaths;
                                         setStorageVal(Constants.LOCAL_FILESPATHS, itemData.filesPaths, () => {
@@ -445,7 +435,7 @@ export const workspaceMenu = (app: App, rect: DOMRect) => {
                 submenu: layoutSubMenu
             }).element);
         }
-        window.siyuan.menus.menu.append(new MenuItem({id: "separator_1", type: "separator"}).element);
+        window.siyuan.menus.menu.append(new MenuItem({ id: "separator_1", type: "separator" }).element);
         if (!window.siyuan.config.readonly) {
             if (getOpenNotebookCount() < 2) {
                 window.siyuan.menus.menu.append(new MenuItem({
@@ -532,7 +522,7 @@ export const workspaceMenu = (app: App, rect: DOMRect) => {
                     openHistory(app);
                 }
             }).element);
-            window.siyuan.menus.menu.append(new MenuItem({id: "separator_2", type: "separator"}).element);
+            window.siyuan.menus.menu.append(new MenuItem({ id: "separator_2", type: "separator" }).element);
         }
         window.siyuan.menus.menu.append(new MenuItem({
             id: "userGuide",
@@ -566,7 +556,7 @@ export const workspaceMenu = (app: App, rect: DOMRect) => {
         }).element);
         /// #endif
         if (isIPad() || isInAndroid() || isInHarmony() || !isBrowser()) {
-            window.siyuan.menus.menu.append(new MenuItem({id: "separator_3", type: "separator"}).element);
+            window.siyuan.menus.menu.append(new MenuItem({ id: "separator_3", type: "separator" }).element);
             window.siyuan.menus.menu.append(new MenuItem({
                 id: "safeQuit",
                 label: window.siyuan.languages.safeQuit,
@@ -580,7 +570,7 @@ export const workspaceMenu = (app: App, rect: DOMRect) => {
                 }
             }).element);
         }
-        window.siyuan.menus.menu.popup({x: rect.left, y: rect.bottom});
+        window.siyuan.menus.menu.popup({ x: rect.left, y: rect.bottom });
     });
 };
 
@@ -633,7 +623,7 @@ const workspaceItem = (item: IWorkspace) => {
                 icon: "iconTrashcan",
                 label: window.siyuan.languages.removeWorkspaceTip,
                 click() {
-                    fetchPost("/api/system/removeWorkspaceDir", {path: item.path});
+                    fetchPost("/api/system/removeWorkspaceDir", { path: item.path });
                 }
             });
         }

@@ -56,10 +56,11 @@ export const getIdFromSYProtocol = (url: string) => {
     return url.substring(16, 16 + 22);
 };
 
-/* redirect to auth page */
+/* redirect to unified login page */
 export const redirectToCheckAuth = (to: string = window.location.href) => {
     const url = new URL(window.location.origin);
-    url.pathname = "/check-auth";
+    // Instead of redirecting to /check-auth, redirect to the unified login page
+    url.pathname = "/";
     url.searchParams.set("to", to);
     window.location.href = url.href;
 };
