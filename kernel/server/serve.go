@@ -471,7 +471,90 @@ func serveAuthPage(c *gin.Context) {
 }
 
 func serveAssets(ginServer *gin.Engine) {
-	ginServer.POST("/upload", model.CheckAuth, model.CheckAdminRole, model.CheckReadonly, model.Upload)
+	// 注册 /upload 端点作为 /api/asset/upload 的别名
+	// 在Web模式下使用 CheckWebAuth，在传统模式下使用 CheckAuth
+	if os.Getenv("SIYUAN_WEB_MODE") == "true" {
+		ginServer.POST("/upload", model.CheckWebAuth, model.CheckAdminRole, model.CheckReadonly, model.Upload)
+	} else {
+		ginServer.POST("/upload", model.CheckAuth, model.CheckAdminRole, model.CheckReadonly, model.Upload)
+	}
+
+	// 公开的 assets 访问端点，用于 Office Online Viewer 等外部服务访问
+	// 仅支持 Office 文档类型，避免敏感文件泄露
+	publicAssetsHandler := func(context *gin.Context) {
+		requestPath := context.Param("path")
+		if "/" == requestPath || "" == requestPath {
+			context.Status(http.StatusForbidden)
+			return
+		}
+
+		// URL 解码文件名（处理中文等特殊字符）
+		decodedPath, err := url.PathUnescape(requestPath)
+		if err != nil {
+			decodedPath = requestPath
+		}
+
+		// 仅允许访问 Office 文档类型
+		ext := strings.ToLower(filepath.Ext(decodedPath))
+		allowedExts := map[string]bool{
+			".doc": true, ".docx": true,
+			".xls": true, ".xlsx": true,
+			".ppt": true, ".pptx": true,
+			".odt": true, ".ods": true, ".odp": true,
+		}
+		if !allowedExts[ext] {
+			logging.LogWarnf("public-assets: forbidden extension [%s] for path [%s]", ext, decodedPath)
+			context.Status(http.StatusForbidden)
+			return
+		}
+
+		// 在多用户模式下，搜索所有用户的 assets 目录
+		userDataRoot := os.Getenv("SIYUAN_USER_DATA_ROOT")
+		if userDataRoot == "" {
+			userDataRoot = "/root/code/MindOcean/user-data/notes"
+		}
+
+		fileName := strings.TrimPrefix(decodedPath, "/")
+		var foundPath string
+
+		logging.LogInfof("public-assets: searching for file [%s] in [%s]", fileName, userDataRoot)
+
+		// 遍历用户数据目录查找文件
+		filepath.Walk(userDataRoot, func(p string, info os.FileInfo, err error) error {
+			if err != nil {
+				return nil
+			}
+			if info.IsDir() {
+				return nil
+			}
+			// 检查文件名是否匹配（在 assets 目录下）
+			baseName := filepath.Base(p)
+			if baseName == fileName && strings.Contains(p, "/assets/") {
+				foundPath = p
+				logging.LogInfof("public-assets: found file at [%s]", p)
+				return filepath.SkipAll
+			}
+			return nil
+		})
+
+		if foundPath == "" {
+			logging.LogWarnf("public-assets: file not found [%s]", fileName)
+			context.Status(http.StatusNotFound)
+			return
+		}
+
+		// 设置正确的 Content-Type
+		contentType := mime.TypeByExtension(ext)
+		if contentType != "" {
+			context.Header("Content-Type", contentType)
+		}
+		// 允许跨域访问（Office Online Viewer 需要）
+		context.Header("Access-Control-Allow-Origin", "*")
+
+		http.ServeFile(context.Writer, context.Request, foundPath)
+	}
+	ginServer.GET("/public-assets/*path", publicAssetsHandler)
+	ginServer.HEAD("/public-assets/*path", publicAssetsHandler)
 
 	ginServer.GET("/assets/*path", model.CheckAuth, func(context *gin.Context) {
 		requestPath := context.Param("path")

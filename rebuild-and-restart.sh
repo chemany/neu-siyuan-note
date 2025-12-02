@@ -1,6 +1,7 @@
 #!/bin/bash
 
 # 思源笔记一键重新构建和重启脚本
+# 注意：前端使用 build:desktop 构建（Web版使用desktop目录）
 set -e  # 遇到错误立即退出
 
 echo "🔄 开始重新构建思源笔记..."
@@ -9,15 +10,15 @@ echo ""
 # 切换到项目目录
 cd /root/code/siyuan
 
-# 1. 构建前端
-echo "📦 [1/3] 构建前端..."
+# 1. 构建前端 (使用 desktop 构建，Web版访问 /stage/build/desktop/)
+echo "📦 [1/3] 构建前端 (desktop)..."
 cd app
-npm run build:app
+npm run build:desktop
 if [ $? -ne 0 ]; then
     echo "❌ 前端构建失败！"
     exit 1
 fi
-echo "✅ 前端构建成功"
+echo "✅ 前端构建成功 (输出目录: stage/build/desktop/)"
 echo ""
 
 # 2. 构建后端

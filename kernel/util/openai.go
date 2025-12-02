@@ -104,7 +104,7 @@ func NewOpenAIClient(apiKey, apiProxy, apiBaseURL, apiUserAgent, apiVersion, api
 			transport.Proxy = http.ProxyURL(proxyUrl)
 		}
 	}
-	config.HTTPClient = &http.Client{Transport: newAddHeaderTransport(transport, apiUserAgent)}
+	config.HTTPClient = &http.Client{Transport: newAddHeaderTransport(transport, apiUserAgent, apiBaseURL)}
 	config.BaseURL = apiBaseURL
 	return openai.NewClientWithConfig(config)
 }
@@ -112,13 +112,19 @@ func NewOpenAIClient(apiKey, apiProxy, apiBaseURL, apiUserAgent, apiVersion, api
 type AddHeaderTransport struct {
 	RoundTripper http.RoundTripper
 	UserAgent    string
+	BaseURL      string
 }
 
 func (adt *AddHeaderTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	req.Header.Add("User-Agent", adt.UserAgent)
+	// 为OpenRouter添加必要的HTTP头
+	if strings.Contains(adt.BaseURL, "openrouter.ai") {
+		req.Header.Set("HTTP-Referer", "https://siyuan-note.com")
+		req.Header.Set("X-Title", "SiYuan Note")
+	}
 	return adt.RoundTripper.RoundTrip(req)
 }
 
-func newAddHeaderTransport(transport *http.Transport, userAgent string) *AddHeaderTransport {
-	return &AddHeaderTransport{RoundTripper: transport, UserAgent: userAgent}
+func newAddHeaderTransport(transport *http.Transport, userAgent, baseURL string) *AddHeaderTransport {
+	return &AddHeaderTransport{RoundTripper: transport, UserAgent: userAgent, BaseURL: baseURL}
 }

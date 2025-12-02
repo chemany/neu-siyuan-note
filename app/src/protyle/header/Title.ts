@@ -16,6 +16,8 @@ import {isMac, readText} from "../util/compatibility";
 import * as dayjs from "dayjs";
 /// #if !MOBILE
 import {openFileById} from "../../editor/util";
+import {getDockByType} from "../../layout/tabUtil";
+import {Files} from "../../layout/dock/Files";
 /// #endif
 import {setTitle} from "../../dialog/processSystem";
 import {getContenteditableElement, getNoContainerElement} from "../wysiwyg/getBlock";
@@ -28,6 +30,7 @@ import {commonClick} from "../wysiwyg/commonClick";
 import {openTitleMenu} from "./openTitleMenu";
 import {electronUndo} from "../undo";
 import {enableLuteMarkdownSyntax, restoreLuteMarkdownSyntax} from "../util/paste";
+import {escapeHtml} from "../../util/escape";
 
 export class Title {
     public element: HTMLElement;
@@ -317,6 +320,27 @@ export class Title {
             return false;
         }
         hideTooltip();
+        
+        // 立即更新标签标题，提供实时反馈
+        const currentTitle = replaceFileName(this.editElement.textContent) || window.siyuan.languages.untitled;
+        if (protyle.model) {
+            protyle.model.parent.updateTitle(currentTitle);
+        }
+        
+        // 立即更新文档树中的名称
+        /// #if !MOBILE
+        const fileModel = getDockByType("file")?.data?.file;
+        if (fileModel instanceof Files) {
+            const fileItemElement = fileModel.element.querySelector(`li[data-path="${protyle.path}"]`);
+            if (fileItemElement) {
+                const textElement = fileItemElement.querySelector(".b3-list-item__text");
+                if (textElement) {
+                    textElement.innerHTML = escapeHtml(currentTitle);
+                }
+            }
+        }
+        /// #endif
+        
         this.timeout = window.setTimeout(() => {
             const fileName = replaceFileName(this.editElement.textContent);
             fetchPost("/api/filetree/renameDoc", {

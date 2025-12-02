@@ -15,6 +15,74 @@ import {avRender} from "../render/av/render";
 import {cellScrollIntoView, getCellText} from "../render/av/cell";
 import {getContenteditableElement} from "../wysiwyg/getBlock";
 
+// 从粘贴内容中提取本地文件路径
+// 支持 file:// URI 格式和直接的文件路径
+// 用于处理 Windows/Linux/Mac 复制文件后粘贴上传的场景
+const extractLocalFilePaths = (textPlain: string, textHTML: string): string[] => {
+    const filePaths: string[] = [];
+    
+    // 检查 textPlain 中的 file:// URI
+    // Linux/Mac/Windows 复制文件时通常会在剪贴板中放入 file:// URI
+    const fileUriPattern = /file:\/\/([^\s\n\r]+)/g;
+    let match;
+    
+    // 优先从 textPlain 中提取
+    while ((match = fileUriPattern.exec(textPlain)) !== null) {
+        try {
+            // 解码 URI 编码的路径
+            let filePath = decodeURIComponent(match[1]);
+            // 移除可能的尾部换行符和空白
+            filePath = filePath.trim();
+            if (filePath) {
+                filePaths.push(filePath);
+            }
+        } catch (e) {
+            // 解码失败，跳过
+        }
+    }
+    
+    // 如果 textPlain 中没有找到，尝试从 textHTML 中提取
+    if (filePaths.length === 0 && textHTML) {
+        fileUriPattern.lastIndex = 0;
+        while ((match = fileUriPattern.exec(textHTML)) !== null) {
+            try {
+                let filePath = decodeURIComponent(match[1]);
+                filePath = filePath.trim();
+                if (filePath) {
+                    filePaths.push(filePath);
+                }
+            } catch (e) {
+                // 解码失败，跳过
+            }
+        }
+    }
+    
+    // 如果没有找到 file:// URI，检查 textPlain 是否为绝对路径
+    // 只有当整个内容看起来像是文件路径列表时才处理
+    // 避免误判普通文本或 URL
+    if (filePaths.length === 0 && textPlain) {
+        const lines = textPlain.split("\n").map(line => line.trim()).filter(line => line);
+        // 只有当所有非空行都是文件路径时才处理
+        const allLinesArePaths = lines.length > 0 && lines.every(line => {
+            // Windows 绝对路径: C:\... 或 D:\... 等
+            // Windows UNC 路径: \\server\share
+            // Unix 绝对路径: /... (但不是 // 开头的协议)
+            const isWindowsPath = /^[A-Za-z]:[\\\/]/.test(line);
+            const isUNCPath = /^\\\\[^\\]+\\/.test(line);
+            const isUnixPath = /^\/[^\/\s]/.test(line) && !line.includes("://");
+            return isWindowsPath || isUNCPath || isUnixPath;
+        });
+        
+        if (allLinesArePaths) {
+            for (const line of lines) {
+                filePaths.push(line);
+            }
+        }
+    }
+    
+    return filePaths;
+};
+
 export const getTextStar = (blockElement: HTMLElement) => {
     const dataType = blockElement.dataset.type;
     let refText = "";
@@ -276,6 +344,14 @@ export const paste = async (protyle: IProtyle, event: (ClipboardEvent | DragEven
         }
     }
     /// #endif
+
+    // 检测粘贴的内容是否为文件路径（file:// URI 或本地绝对路径）
+    // 支持 Windows/Linux/Mac 复制文件后粘贴上传
+    const localFilePaths = extractLocalFilePaths(textPlain, textHTML);
+    if (localFilePaths.length > 0 && !siyuanHTML) {
+        readLocalFile(protyle, localFilePaths);
+        return;
+    }
 
     // 浏览器地址栏拷贝处理
     if (textHTML.replace(/&amp;/g, "&").replace(/<(|\/)(html|body|meta)[^>]*?>/ig, "").trim() ===

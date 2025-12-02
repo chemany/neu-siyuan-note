@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -144,25 +145,36 @@ func getEffectiveAIConfig() (apiKey, apiBaseURL, apiModel string, maxTokens int,
 	maxTokens = Conf.AI.OpenAI.APIMaxTokens
 	temperature = Conf.AI.OpenAI.APITemperature
 
-	if apiKey == "USE_DEFAULT_CONFIG" || apiModel == "USE_DEFAULT_CONFIG" {
+	// 当APIKey为空、为USE_DEFAULT_CONFIG，或者APIProvider为builtin时，读取默认配置
+	needDefaultConfig := apiKey == "" || apiKey == "USE_DEFAULT_CONFIG" || apiModel == "USE_DEFAULT_CONFIG" || Conf.AI.OpenAI.APIProvider == "builtin"
+
+	if needDefaultConfig {
 		configPath := "/home/jason/code/unified-settings-service/config/default-models.json"
 		data, err := os.ReadFile(configPath)
 		if err == nil {
 			var models map[string]DefaultModelConfig
 			if err := json.Unmarshal(data, &models); err == nil {
-				targetConfig := models["builtin_free"]
-				if val, ok := models["builtin_free_neuralink"]; ok {
+				// 优先使用思源笔记专用模型配置
+				var targetConfig DefaultModelConfig
+				if val, ok := models["builtin_free_siyuan"]; ok {
+					targetConfig = val
+				} else if val, ok := models["builtin_free_neuralink"]; ok {
+					// 兼容旧配置
+					targetConfig = val
+				} else if val, ok := models["builtin_free"]; ok {
 					targetConfig = val
 				}
 
-				apiKey = targetConfig.APIKey
-				apiBaseURL = targetConfig.BaseURL
-				apiModel = targetConfig.ModelName
-				if targetConfig.MaxTokens > 0 {
-					maxTokens = targetConfig.MaxTokens
-				}
-				if targetConfig.Temperature > 0 {
-					temperature = targetConfig.Temperature
+				if targetConfig.APIKey != "" {
+					apiKey = targetConfig.APIKey
+					apiBaseURL = targetConfig.BaseURL
+					apiModel = targetConfig.ModelName
+					if targetConfig.MaxTokens > 0 {
+						maxTokens = targetConfig.MaxTokens
+					}
+					if targetConfig.Temperature > 0 {
+						temperature = targetConfig.Temperature
+					}
 				}
 			}
 		}
@@ -198,7 +210,17 @@ func Chat(messages []openai.ChatCompletionMessage) (ret string, err error) {
 }
 
 func isOpenAIAPIEnabled() bool {
+	// 如果配置了USE_DEFAULT_CONFIG或builtin provider，说明使用内置模型，也应该启用
+	if Conf.AI.OpenAI.APIKey == "USE_DEFAULT_CONFIG" || Conf.AI.OpenAI.APIModel == "USE_DEFAULT_CONFIG" || Conf.AI.OpenAI.APIProvider == "builtin" {
+		return true
+	}
+	// 如果APIKey为空，尝试检查是否有默认配置可用
 	if "" == Conf.AI.OpenAI.APIKey {
+		// 检查默认配置文件是否存在
+		configPath := "/home/jason/code/unified-settings-service/config/default-models.json"
+		if _, err := os.Stat(configPath); err == nil {
+			return true // 有默认配置文件，允许使用
+		}
 		util.PushMsg(Conf.Language(193), 5000)
 		return false
 	}
@@ -720,4 +742,288 @@ func BatchVectorizeNotebook(notebookID string) error {
 
 	logging.LogInfof("笔记本 %s 完成向量化 %d 个块", notebookID, vectorized)
 	return nil
+}
+
+// ParseAttachment 解析附件内容（支持PDF等格式）
+func ParseAttachment(assetPath string) (string, error) {
+	// 处理assets路径
+	var fullPath string
+	if strings.HasPrefix(assetPath, "assets/") {
+		// 相对于data目录的assets路径
+		fullPath = filepath.Join(util.DataDir, assetPath)
+	} else if strings.HasPrefix(assetPath, "/") {
+		// 绝对路径
+		fullPath = assetPath
+	} else {
+		// 其他情况，尝试在data/assets下查找
+		fullPath = filepath.Join(util.DataDir, "assets", assetPath)
+	}
+
+	// 检查文件是否存在
+	if !gulu.File.IsExist(fullPath) {
+		return "", fmt.Errorf("文件不存在: %s", fullPath)
+	}
+
+	// 获取文件扩展名
+	ext := strings.ToLower(filepath.Ext(fullPath))
+
+	switch ext {
+	case ".pdf":
+		return parsePDF(fullPath)
+	case ".txt", ".md", ".markdown", ".json", ".xml", ".html", ".htm", ".css", ".js", ".ts", ".go", ".py", ".java", ".c", ".cpp", ".h", ".sh", ".yaml", ".yml", ".toml", ".ini", ".conf", ".log":
+		return parseTextFile(fullPath)
+	case ".docx":
+		return parseDocx(fullPath)
+	case ".doc":
+		return parseDoc(fullPath)
+	case ".xlsx", ".xls":
+		return parseExcel(fullPath)
+	case ".pptx":
+		return parsePptx(fullPath)
+	case ".rtf":
+		return parseRtf(fullPath)
+	case ".odt":
+		return parseOdt(fullPath)
+	case ".csv":
+		return parseCsv(fullPath)
+	default:
+		return "", fmt.Errorf("不支持的文件格式: %s (支持: pdf, doc, docx, xls, xlsx, pptx, txt, md, csv, rtf, odt等)", ext)
+	}
+}
+
+// parsePDF 使用pdftotext解析PDF文件
+func parsePDF(filePath string) (string, error) {
+	// 使用pdftotext命令行工具
+	cmd := exec.Command("pdftotext", "-enc", "UTF-8", "-layout", filePath, "-")
+	output, err := cmd.Output()
+	if err != nil {
+		// 尝试不带layout参数
+		cmd = exec.Command("pdftotext", "-enc", "UTF-8", filePath, "-")
+		output, err = cmd.Output()
+		if err != nil {
+			return "", fmt.Errorf("PDF解析失败: %v", err)
+		}
+	}
+
+	content := string(output)
+	content = strings.TrimSpace(content)
+
+	if content == "" {
+		return "", fmt.Errorf("PDF内容为空或无法提取文本")
+	}
+
+	// 限制返回内容长度，避免过大
+	if len(content) > 50000 {
+		content = content[:50000] + "\n...(内容已截断)"
+	}
+
+	return content, nil
+}
+
+// parseTextFile 解析纯文本文件
+func parseTextFile(filePath string) (string, error) {
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return "", fmt.Errorf("读取文件失败: %v", err)
+	}
+
+	content := string(data)
+	if len(content) > 50000 {
+		content = content[:50000] + "\n...(内容已截断)"
+	}
+
+	return content, nil
+}
+
+// parseDocx 解析Word文档（简单实现，提取纯文本）
+func parseDocx(filePath string) (string, error) {
+	// 使用unzip提取document.xml然后解析
+	// 这是一个简化实现，实际可能需要更完善的docx解析库
+	cmd := exec.Command("unzip", "-p", filePath, "word/document.xml")
+	output, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("DOCX解析失败: %v", err)
+	}
+
+	// 简单提取文本内容（去除XML标签）
+	content := string(output)
+	// 移除XML标签，保留文本
+	content = removeXMLTags(content)
+	content = strings.TrimSpace(content)
+
+	if len(content) > 50000 {
+		content = content[:50000] + "\n...(内容已截断)"
+	}
+
+	return content, nil
+}
+
+// removeXMLTags 移除XML标签
+func removeXMLTags(s string) string {
+	var result strings.Builder
+	inTag := false
+	for _, r := range s {
+		if r == '<' {
+			inTag = true
+			continue
+		}
+		if r == '>' {
+			inTag = false
+			result.WriteRune(' ')
+			continue
+		}
+		if !inTag {
+			result.WriteRune(r)
+		}
+	}
+	// 清理多余空白
+	return strings.Join(strings.Fields(result.String()), " ")
+}
+
+// parseDoc 解析旧版Word文档(.doc)
+func parseDoc(filePath string) (string, error) {
+	// 优先尝试antiword
+	cmd := exec.Command("antiword", "-m", "UTF-8", filePath)
+	output, err := cmd.Output()
+	if err == nil && len(output) > 0 {
+		content := strings.TrimSpace(string(output))
+		if len(content) > 50000 {
+			content = content[:50000] + "\n...(内容已截断)"
+		}
+		return content, nil
+	}
+
+	// 备选：尝试catdoc
+	cmd = exec.Command("catdoc", "-d", "utf-8", filePath)
+	output, err = cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("DOC解析失败: %v (请确保安装了antiword或catdoc)", err)
+	}
+
+	content := strings.TrimSpace(string(output))
+	if len(content) > 50000 {
+		content = content[:50000] + "\n...(内容已截断)"
+	}
+	return content, nil
+}
+
+// parseExcel 解析Excel文件(.xlsx, .xls)
+func parseExcel(filePath string) (string, error) {
+	ext := strings.ToLower(filepath.Ext(filePath))
+
+	if ext == ".xlsx" {
+		// 解析xlsx (Office Open XML格式)
+		cmd := exec.Command("unzip", "-p", filePath, "xl/sharedStrings.xml")
+		output, err := cmd.Output()
+		if err == nil && len(output) > 0 {
+			content := removeXMLTags(string(output))
+			content = strings.TrimSpace(content)
+			if len(content) > 50000 {
+				content = content[:50000] + "\n...(内容已截断)"
+			}
+			return content, nil
+		}
+	}
+
+	// 尝试使用ssconvert (gnumeric)转换为CSV
+	tmpFile := filepath.Join(os.TempDir(), "excel_temp.csv")
+	defer os.Remove(tmpFile)
+
+	cmd := exec.Command("ssconvert", filePath, tmpFile)
+	if err := cmd.Run(); err == nil {
+		data, err := os.ReadFile(tmpFile)
+		if err == nil {
+			content := string(data)
+			if len(content) > 50000 {
+				content = content[:50000] + "\n...(内容已截断)"
+			}
+			return content, nil
+		}
+	}
+
+	return "", fmt.Errorf("Excel解析失败 (支持有限，建议转换为CSV)")
+}
+
+// parsePptx 解析PowerPoint文件(.pptx)
+func parsePptx(filePath string) (string, error) {
+	// 提取所有slide的文本
+	cmd := exec.Command("unzip", "-p", filePath)
+	output, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("PPTX解析失败: %v", err)
+	}
+
+	// 从输出中提取文本
+	content := removeXMLTags(string(output))
+	content = strings.TrimSpace(content)
+
+	if content == "" {
+		return "", fmt.Errorf("PPTX内容为空或无法提取文本")
+	}
+
+	if len(content) > 50000 {
+		content = content[:50000] + "\n...(内容已截断)"
+	}
+	return content, nil
+}
+
+// parseRtf 解析RTF文件
+func parseRtf(filePath string) (string, error) {
+	// 尝试使用unrtf
+	cmd := exec.Command("unrtf", "--text", filePath)
+	output, err := cmd.Output()
+	if err != nil {
+		// 备选：直接读取并简单清理
+		data, err := os.ReadFile(filePath)
+		if err != nil {
+			return "", fmt.Errorf("RTF解析失败: %v", err)
+		}
+		// 简单移除RTF控制字符
+		content := string(data)
+		// 移除 {\rtf1 ... } 等控制序列
+		content = strings.ReplaceAll(content, "\\par", "\n")
+		// 这是简化处理，可能不完美
+		if len(content) > 50000 {
+			content = content[:50000] + "\n...(内容已截断)"
+		}
+		return content, nil
+	}
+
+	content := strings.TrimSpace(string(output))
+	if len(content) > 50000 {
+		content = content[:50000] + "\n...(内容已截断)"
+	}
+	return content, nil
+}
+
+// parseOdt 解析OpenDocument文本文件(.odt)
+func parseOdt(filePath string) (string, error) {
+	// ODT是ZIP格式，内容在content.xml中
+	cmd := exec.Command("unzip", "-p", filePath, "content.xml")
+	output, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("ODT解析失败: %v", err)
+	}
+
+	content := removeXMLTags(string(output))
+	content = strings.TrimSpace(content)
+
+	if len(content) > 50000 {
+		content = content[:50000] + "\n...(内容已截断)"
+	}
+	return content, nil
+}
+
+// parseCsv 解析CSV文件
+func parseCsv(filePath string) (string, error) {
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return "", fmt.Errorf("CSV读取失败: %v", err)
+	}
+
+	content := string(data)
+	if len(content) > 50000 {
+		content = content[:50000] + "\n...(内容已截断)"
+	}
+	return content, nil
 }

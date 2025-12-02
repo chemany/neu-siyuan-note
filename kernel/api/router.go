@@ -501,6 +501,10 @@ func ServeAPI(ginServer *gin.Engine) {
 	ginServer.Handle("POST", "/api/ai/getEmbeddingModels", model.CheckWebAuth, model.CheckAdminRole, getEmbeddingModels)
 	ginServer.Handle("POST", "/api/ai/testEmbeddingConnection", model.CheckWebAuth, model.CheckAdminRole, testEmbeddingConnection)
 
+	// 附件解析API（PDF等）
+	ginServer.Handle("POST", "/api/ai/parseAttachment", model.CheckWebAuth, parseAttachment)
+	ginServer.Handle("POST", "/api/ai/batchParseAttachments", model.CheckWebAuth, batchParseAttachments)
+
 	ginServer.Handle("POST", "/api/petal/loadPetals", model.CheckWebAuth, loadPetals)
 	ginServer.Handle("POST", "/api/petal/setPetalEnabled", model.CheckWebAuth, model.CheckAdminRole, model.CheckReadonly, setPetalEnabled)
 
@@ -533,6 +537,12 @@ func ServeAPI(ginServer *gin.Engine) {
 	ginServer.Handle("GET", "/api/web/auth/health", webAuthHealth)
 	ginServer.Handle("POST", "/api/web/auth/verify-token", webAuthVerifyToken)
 	ginServer.Handle("POST", "/api/web/auth/refresh-token", webAuthRefreshToken)
+
+	// 笔记本优化API - 使用标准认证
+	ginServer.Handle("POST", "/api/notebook/organizeByCategory", model.CheckWebAuth, organizeNotebooksByCategory)
+	ginServer.Handle("POST", "/api/notebook/prepareForAI", model.CheckWebAuth, prepareForAIAnalysis)
+	ginServer.Handle("POST", "/api/notebook/getOptimized", model.CheckWebAuth, getOptimizedNotebooks)
+	ginServer.Handle("POST", "/api/notebook/searchContent", model.CheckWebAuth, searchNotebookContent)
 
 	// Web认证API - 需要Web认证的接口
 	ginServer.Handle("POST", "/api/web/auth/profile", webAuthMiddleware, webAuthProfile)

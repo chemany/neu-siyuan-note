@@ -14,6 +14,18 @@ import {hideElements} from "../protyle/ui/hideElements";
 import {openMobileFileById} from "../mobile/editor";
 import {App} from "../index";
 
+// 刷新文档树中指定路径的父目录
+const refreshFileTreeAfterCreate = (notebookId: string, docPath: string) => {
+    /// #if !MOBILE
+    const fileModel = getDockByType("file")?.data?.file;
+    if (fileModel instanceof Files) {
+        // 调用 selectItem 来刷新并选中新文档
+        const syPath = docPath.endsWith(".sy") ? docPath : docPath + ".sy";
+        fileModel.selectItem(notebookId, syPath);
+    }
+    /// #endif
+};
+
 export const getNewFilePath = (useSavePath: boolean) => {
     let notebookId = "";
     let currentPath = "";
@@ -108,6 +120,14 @@ export const newFile = (optios: {
                     if (optios.afterCB) {
                         optios.afterCB(response.data, pathPosix().basename(createPath));
                     }
+                    // 主动刷新文档树
+                    if (optios.listDocTree) {
+                        fetchPost("/api/block/getBlockInfo", {id: response.data}, (blockInfo) => {
+                            if (blockInfo.data?.path) {
+                                refreshFileTreeAfterCreate(data.data.box, blockInfo.data.path.replace(".sy", ""));
+                            }
+                        });
+                    }
                     /// #if !MOBILE
                     openFileById({
                         app: optios.app,
@@ -190,6 +210,10 @@ export const newFile = (optios: {
             }, () => {
                 if (optios.afterCB) {
                     optios.afterCB(id, title);
+                }
+                // 主动刷新文档树
+                if (optios.listDocTree) {
+                    refreshFileTreeAfterCreate(data.data.box, newPath.replace(".sy", ""));
                 }
                 /// #if !MOBILE
                 openFileById({app: optios.app, id, action: [Constants.CB_GET_CONTEXT, Constants.CB_GET_OPENNEW]});

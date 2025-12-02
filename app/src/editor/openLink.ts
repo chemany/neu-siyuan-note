@@ -8,7 +8,22 @@ import {Constants} from "../constants";
 import {showMessage} from "../dialog/message";
 import {openAsset, openBy} from "./util";
 
-export const openLink = (protyle: IProtyle, aLink: string, event?: MouseEvent, ctrlIsPressed = false) => {
+// 需要双击才能预览的文档类型（Office 文档、Markdown 等）
+const DBLCLICK_PREVIEW_EXTS = [
+    ...Constants.SIYUAN_ASSETS_DOCUMENT,
+    ".md", ".markdown", ".txt"
+];
+
+// 检查是否为需要双击预览的文档类型
+export const isDocumentLink = (linkAddress: string): boolean => {
+    if (!isLocalPath(linkAddress)) {
+        return false;
+    }
+    const extName = pathPosix().extname(linkAddress).toLowerCase().split("?")[0];
+    return DBLCLICK_PREVIEW_EXTS.includes(extName);
+};
+
+export const openLink = (protyle: IProtyle, aLink: string, event?: MouseEvent, ctrlIsPressed = false, isDblClick = false) => {
     let linkAddress = Lute.UnEscapeHTMLStr(aLink);
     let pdfParams;
     if (isLocalPath(linkAddress) && !linkAddress.startsWith("file://") && linkAddress.indexOf(".pdf") > -1) {
@@ -25,28 +40,37 @@ export const openLink = (protyle: IProtyle, aLink: string, event?: MouseEvent, c
     openByMobile(linkAddress);
     /// #else
     if (isLocalPath(linkAddress)) {
-        if (Constants.SIYUAN_ASSETS_EXTS.includes(pathPosix().extname(linkAddress)) &&
-            (
-                !linkAddress.endsWith(".pdf") ||
-                    // 本地 pdf 仅 assets/ 开头的才使用 siyuan 打开
-                (linkAddress.endsWith(".pdf") && linkAddress.startsWith("assets/"))
-            )
-        ) {
+        const extName = pathPosix().extname(linkAddress).toLowerCase().split("?")[0];
+        // 检查是否为支持内置预览的资源类型
+        const isAssetExt = Constants.SIYUAN_ASSETS_EXTS.includes(extName);
+        // 检查是否为需要双击才预览的文档类型
+        const needDblClick = DBLCLICK_PREVIEW_EXTS.includes(extName);
+        
+        // 如果是需要双击预览的文档类型，单击时不做任何操作
+        if (needDblClick && !isDblClick) {
+            return;
+        }
+        
+        if (isAssetExt || needDblClick) {
+            // 所有支持的资源类型都使用内置预览
             if (event && event.altKey) {
                 openAsset(protyle.app, linkAddress, pdfParams);
             } else if (event && event.shiftKey) {
                 /// #if !BROWSER
                 openBy(linkAddress, "app");
                 /// #else
-                openByMobile(linkAddress);
+                // Web 模式下 Shift+点击也使用内置预览
+                openAsset(protyle.app, linkAddress, pdfParams, "right");
                 /// #endif
             } else if (ctrlIsPressed) {
                 /// #if !BROWSER
                 openBy(linkAddress, "folder");
                 /// #else
-                openByMobile(linkAddress);
+                // Web 模式下 Ctrl+点击也使用内置预览
+                openAsset(protyle.app, linkAddress, pdfParams, "right");
                 /// #endif
             } else {
+                // 默认在右侧打开预览
                 openAsset(protyle.app, linkAddress, pdfParams, "right");
             }
         } else {

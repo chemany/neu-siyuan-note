@@ -9,6 +9,7 @@ import { getDockByType } from "../tabUtil";
 import { getAllModels } from "../getAll";
 import { insertHTML } from "../../protyle/util/insertHTML";
 import { focusBlock } from "../../protyle/util/selection";
+import { fetchSyncPost } from "../../util/fetch";
 
 interface IAIMessage {
     role: "user" | "assistant" | "system";
@@ -210,80 +211,258 @@ export class AI extends Model {
     }
 
     private getCurrentDocContent(): string {
-        // 获取当前激活的编辑器
+        // 获取当前激活的编辑器 - 使用多种方法确保能获取到
         const models = getAllModels();
-        const activeEditor = models.editor.find(item =>
+        console.log("[AI] 编辑器总数:", models.editor.length);
+        
+        let activeEditor = null;
+        
+        // 方法1: 查找焦点编辑器 (item--focus)
+        activeEditor = models.editor.find(item =>
             item.parent?.headElement?.classList.contains("item--focus")
         );
+        if (activeEditor) {
+            console.log("[AI] 方法1找到焦点编辑器");
+        }
+        
+        // 方法2: 查找 fn__flex-1--focus 类
+        if (!activeEditor) {
+            activeEditor = models.editor.find(item =>
+                item.parent?.headElement?.classList.contains("fn__flex-1--focus")
+            );
+            if (activeEditor) {
+                console.log("[AI] 方法2找到焦点编辑器");
+            }
+        }
+        
+        // 方法3: 查找包含 data-activetime 最新的编辑器
+        if (!activeEditor && models.editor.length > 0) {
+            let latestTime = 0;
+            models.editor.forEach(item => {
+                const time = parseInt(item.parent?.headElement?.getAttribute("data-activetime") || "0");
+                if (time > latestTime) {
+                    latestTime = time;
+                    activeEditor = item;
+                }
+            });
+            if (activeEditor) {
+                console.log("[AI] 方法3找到最近活动的编辑器");
+            }
+        }
+        
+        // 方法4: 直接使用第一个编辑器
+        if (!activeEditor && models.editor.length > 0) {
+            activeEditor = models.editor[0];
+            console.log("[AI] 方法4使用第一个编辑器");
+        }
 
         if (activeEditor && activeEditor.editor?.protyle) {
             this.currentEditor = activeEditor.editor;
             const wysiwygElement = activeEditor.editor.protyle.wysiwyg.element;
-            return wysiwygElement.textContent || "";
+            const content = wysiwygElement.textContent || "";
+            console.log("[AI] 获取到文档内容长度:", content.length);
+            console.log("[AI] 文档内容前200字符:", content.substring(0, 200));
+            return content;
         }
 
+        console.log("[AI] 警告：未能获取到任何编辑器内容！");
         return "";
+    }
+
+    // 扫描文档中的附件链接
+    private getDocumentAttachments(): string[] {
+        if (!this.currentEditor?.protyle) {
+            console.log("[AI] getDocumentAttachments: currentEditor不存在");
+            return [];
+        }
+
+        const attachments: string[] = [];
+        const wysiwygElement = this.currentEditor.protyle.wysiwyg.element;
+
+        // 查找所有附件链接 - 支持多种文档格式
+        const supportedExtensions = [
+            '.pdf',           // PDF文档
+            '.doc', '.docx',  // Word文档
+            '.xls', '.xlsx',  // Excel表格
+            '.pptx',          // PowerPoint
+            '.txt', '.md', '.markdown',  // 文本文件
+            '.csv',           // CSV数据
+            '.rtf',           // RTF富文本
+            '.odt',           // OpenDocument
+            '.json', '.xml', '.html', '.htm',  // 结构化文本
+            '.yaml', '.yml', '.toml', '.ini', '.conf',  // 配置文件
+            '.log',           // 日志文件
+            '.py', '.js', '.ts', '.go', '.java', '.c', '.cpp', '.h', '.sh'  // 代码文件
+        ];
+
+        const addAttachment = (href: string) => {
+            if (href && supportedExtensions.some(ext => href.toLowerCase().endsWith(ext))) {
+                if (!attachments.includes(href)) {
+                    attachments.push(href);
+                    console.log("[AI] 找到附件:", href);
+                }
+            }
+        };
+
+        // 方法1: 查找 <span data-type="a"> 链接
+        wysiwygElement.querySelectorAll('span[data-type="a"]').forEach((link: Element) => {
+            addAttachment(link.getAttribute('data-href') || '');
+        });
+
+        // 方法2: 查找所有包含 assets/ 的链接
+        wysiwygElement.querySelectorAll('[data-href*="assets/"]').forEach((el: Element) => {
+            addAttachment(el.getAttribute('data-href') || '');
+        });
+
+        // 方法3: 查找 data-subtype="a" 的元素
+        wysiwygElement.querySelectorAll('[data-subtype="a"]').forEach((el: Element) => {
+            addAttachment(el.getAttribute('data-href') || '');
+        });
+
+        // 方法4: 从HTML内容中提取 assets/ 路径
+        const htmlContent = wysiwygElement.innerHTML;
+        const assetMatches = htmlContent.match(/assets\/[^"'\s<>]+\.(pdf|docx?|xlsx?|pptx?|txt|md|csv|rtf|odt)/gi);
+        if (assetMatches) {
+            assetMatches.forEach(match => addAttachment(match));
+        }
+
+        console.log("[AI] 附件扫描完成，共找到:", attachments.length, "个附件");
+
+        // 方法5: 查找 <span data-type="a"> 链接 (原有逻辑保留)
+        const links = wysiwygElement.querySelectorAll('span[data-type="a"]');
+        links.forEach((link: Element) => {
+            const href = link.getAttribute('data-href') || '';
+            if (supportedExtensions.some(ext => href.toLowerCase().endsWith(ext))) {
+                if (!attachments.includes(href)) {
+                    attachments.push(href);
+                }
+            }
+        });
+
+        // 查找 <a> 标签
+        const aLinks = wysiwygElement.querySelectorAll('a');
+        aLinks.forEach((link: HTMLAnchorElement) => {
+            const href = link.getAttribute('href') || '';
+            if (supportedExtensions.some(ext => href.toLowerCase().endsWith(ext))) {
+                if (!attachments.includes(href)) {
+                    attachments.push(href);
+                }
+            }
+        });
+
+        // 查找嵌入的文件块
+        const fileBlocks = wysiwygElement.querySelectorAll('[data-type="NodeFile"]');
+        fileBlocks.forEach((block: Element) => {
+            const src = block.getAttribute('data-src') || '';
+            if (supportedExtensions.some(ext => src.toLowerCase().endsWith(ext))) {
+                if (!attachments.includes(src)) {
+                    attachments.push(src);
+                }
+            }
+        });
+
+        return attachments;
+    }
+
+    // 解析附件内容
+    private async parseAttachments(paths: string[]): Promise<string> {
+        if (paths.length === 0) {
+            return "";
+        }
+
+        try {
+            const result = await fetchSyncPost('/api/ai/batchParseAttachments', {
+                paths: paths
+            });
+
+            if (result.code !== 0) {
+                console.warn("附件解析失败:", result.msg);
+                return "";
+            }
+
+            const results = result.data?.results || [];
+            let attachmentContent = "";
+
+            for (const item of results) {
+                if (item.content && !item.error) {
+                    const fileName = item.path.split('/').pop() || item.path;
+                    // 限制每个附件内容长度
+                    const content = item.content.length > 5000 
+                        ? item.content.substring(0, 5000) + "...(内容已截断)"
+                        : item.content;
+                    attachmentContent += `\n\n--- 附件: ${fileName} ---\n${content}`;
+                }
+            }
+
+            return attachmentContent;
+        } catch (error) {
+            console.error("解析附件失败:", error);
+            return "";
+        }
     }
 
     private async callAI(question: string, docContent: string): Promise<string> {
         const messages = [];
 
+        // 调试日志
+        console.log("[AI] callAI被调用，docContent长度:", docContent?.length || 0);
+        console.log("[AI] docContent内容预览:", docContent?.substring(0, 200));
+
+        // 获取并解析附件内容
+        const attachments = this.getDocumentAttachments();
+        console.log("[AI] 找到附件数量:", attachments.length, attachments);
+        
+        let attachmentContent = "";
+        if (attachments.length > 0) {
+            attachmentContent = await this.parseAttachments(attachments);
+            console.log("[AI] 附件解析内容长度:", attachmentContent?.length || 0);
+        }
+
+        // 构建系统消息，确保文档本身内容优先
+        let systemContent = "";
+        
+        // 1. 首先添加文档本身的文字内容（优先级最高）
         if (docContent && docContent.trim()) {
+            const docMaxLength = 4000; // 文档内容最多4000字符
+            systemContent += `【文档正文内容】\n${docContent.substring(0, docMaxLength)}${docContent.length > docMaxLength ? '...(正文已截断)' : ''}\n`;
+            console.log("[AI] 已添加文档正文内容");
+        } else {
+            console.log("[AI] 警告：文档正文内容为空！");
+        }
+        
+        // 2. 然后添加附件内容
+        if (attachmentContent) {
+            const attachMaxLength = 4000; // 附件内容最多4000字符
+            const truncatedAttachment = attachmentContent.length > attachMaxLength 
+                ? attachmentContent.substring(0, attachMaxLength) + "...(附件内容已截断)"
+                : attachmentContent;
+            systemContent += `\n【文档附件内容】${truncatedAttachment}`;
+            console.log("[AI] 已添加附件内容");
+        }
+
+        if (systemContent.trim()) {
+            const systemMsg = `你是一个文档分析助手。请基于以下内容回答用户问题。\n\n${systemContent}`;
             messages.push({
                 role: "system",
-                content: `当前文档内容：\n\n${docContent.substring(0, 3000)}${docContent.length > 3000 ? '...' : ''}`
+                content: systemMsg
             });
+            console.log("[AI] System消息:", systemMsg);
         }
 
         messages.push({
             role: "user",
             content: question
         });
+        
+        console.log("[AI] 发送给AI的完整消息:", JSON.stringify(messages, null, 2));
 
         try {
-            let response;
-            const isBuiltin = window.siyuan.config.ai.openAI.apiProvider === "builtin";
+            // 使用fetchSyncPost确保认证信息被正确传递
+            const result = await fetchSyncPost('/api/ai/chat', {
+                messages: messages,
+                stream: false
+            });
 
-            if (isBuiltin) {
-                const unifiedAuthUrl = window.siyuan.config.system.unifiedAuthServiceUrl || 'http://localhost:3002';
-                const token = localStorage.getItem('siyuan_jwt_token');
-                const headers: any = { 'Content-Type': 'application/json' };
-                if (token) {
-                    headers['Authorization'] = `Bearer ${token}`;
-                }
-
-                response = await fetch(`${unifiedAuthUrl}/api/ai/chat`, {
-                    method: 'POST',
-                    headers: headers,
-                    body: JSON.stringify({
-                        messages: messages,
-                        stream: false
-                    })
-                });
-            } else {
-                // Fallback for standard Siyuan backend
-                let combinedMsg = question;
-                if (docContent && docContent.trim()) {
-                    combinedMsg = `当前文档内容：\n\n${docContent.substring(0, 3000)}\n\n用户问题：${question}`;
-                }
-
-                response = await fetch('/api/ai/chatGPT', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        msg: combinedMsg
-                    })
-                });
-            }
-
-            if (!response.ok) {
-                const errorData = await response.json().catch(() => ({}));
-                throw new Error(errorData.msg || `HTTP ${response.status}`);
-            }
-
-            const result = await response.json();
             if (result.code !== 0) {
                 throw new Error(result.msg || "AI服务返回错误");
             }

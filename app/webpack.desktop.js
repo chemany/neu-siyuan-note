@@ -15,7 +15,7 @@ module.exports = (env, argv) => {
         output: {
             publicPath: "/stage/build/desktop/",
             filename: "[name].[chunkhash].js",
-            path: path.resolve(__dirname, "stage/build/desktop"),
+            path: path.resolve(__dirname, "../kernel/stage/build/desktop"),
         },
         entry: {
             "main": "./src/index.ts",
@@ -105,9 +105,13 @@ module.exports = (env, argv) => {
         plugins: [
             // new BundleAnalyzerPlugin(),
             new CleanWebpackPlugin({
-                cleanStaleWebpackAssets: false,
+                cleanStaleWebpackAssets: true,
+                dangerouslyAllowCleanPatternsOutsideProject: true,
+                dry: false,
                 cleanOnceBeforeBuildPatterns: [
-                    path.join(__dirname, "stage/build/desktop")],
+                    path.join(__dirname, "../kernel/stage/build/desktop/*.js"),
+                    path.join(__dirname, "../kernel/stage/build/desktop/*.css"),
+                    path.join(__dirname, "../kernel/stage/build/desktop/*.html")],
             }),
             new webpack.DefinePlugin({
                 SIYUAN_VERSION: JSON.stringify(pkg.version),
