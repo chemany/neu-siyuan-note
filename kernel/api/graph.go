@@ -50,6 +50,7 @@ func resetLocalGraph(c *gin.Context) {
 	}
 }
 
+// [关系图谱功能已禁用] getGraph 返回空数据
 func getGraph(c *gin.Context) {
 	ret := gulu.Ret.NewResult()
 	defer c.JSON(http.StatusOK, ret)
@@ -60,37 +61,18 @@ func getGraph(c *gin.Context) {
 	}
 
 	reqId := arg["reqId"]
-	ret.Data = map[string]interface{}{"reqId": reqId}
 
-	query := arg["k"].(string)
-	graphConf, err := gulu.JSON.MarshalJSON(arg["conf"])
-	if err != nil {
-		ret.Code = -1
-		ret.Msg = err.Error()
-		return
-	}
-
-	global := conf.NewGlobalGraph()
-	if err = gulu.JSON.UnmarshalJSON(graphConf, global); err != nil {
-		ret.Code = -1
-		ret.Msg = err.Error()
-		return
-	}
-
-	model.Conf.Graph.Global = global
-	model.Conf.Save()
-
-	boxID, nodes, links := model.BuildGraph(query)
+	// 关系图谱功能已禁用，返回空数据
 	ret.Data = map[string]interface{}{
-		"nodes": nodes,
-		"links": links,
-		"conf":  global,
-		"box":   boxID,
-		"reqId": arg["reqId"],
+		"nodes": []*model.GraphNode{},
+		"links": []*model.GraphLink{},
+		"conf":  model.Conf.Graph.Global,
+		"box":   "",
+		"reqId": reqId,
 	}
-	util.RandomSleep(200, 500)
 }
 
+// [关系图谱功能已禁用] getLocalGraph 返回空数据
 func getLocalGraph(c *gin.Context) {
 	ret := gulu.Ret.NewResult()
 	defer c.JSON(http.StatusOK, ret)
@@ -101,39 +83,18 @@ func getLocalGraph(c *gin.Context) {
 	}
 
 	reqId := arg["reqId"]
-	ret.Data = map[string]interface{}{"reqId": reqId}
-	if nil == arg["id"] {
-		return
+	id := ""
+	if arg["id"] != nil {
+		id = arg["id"].(string)
 	}
 
-	keyword := arg["k"].(string)
-	id := arg["id"].(string)
-
-	graphConf, err := gulu.JSON.MarshalJSON(arg["conf"])
-	if err != nil {
-		ret.Code = -1
-		ret.Msg = err.Error()
-		return
-	}
-
-	local := conf.NewLocalGraph()
-	if err = gulu.JSON.UnmarshalJSON(graphConf, local); err != nil {
-		ret.Code = -1
-		ret.Msg = err.Error()
-		return
-	}
-
-	model.Conf.Graph.Local = local
-	model.Conf.Save()
-
-	boxID, nodes, links := model.BuildTreeGraph(id, keyword)
+	// 关系图谱功能已禁用，返回空数据
 	ret.Data = map[string]interface{}{
 		"id":    id,
-		"box":   boxID,
-		"nodes": nodes,
-		"links": links,
-		"conf":  local,
-		"reqId": arg["reqId"],
+		"box":   "",
+		"nodes": []*model.GraphNode{},
+		"links": []*model.GraphLink{},
+		"conf":  model.Conf.Graph.Local,
+		"reqId": reqId,
 	}
-	util.RandomSleep(200, 500)
 }

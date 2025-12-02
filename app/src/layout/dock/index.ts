@@ -24,7 +24,8 @@ import { Constants } from "../../constants";
 
 import { AI } from "./AI";
 
-const TYPES = ["file", "outline", "inbox", "bookmark", "tag", "graph", "globalGraph", "backlink", "ai"];
+// [关系图谱功能已禁用] 移除 "graph" 和 "globalGraph"
+const TYPES = ["file", "outline", "inbox", "bookmark", "tag", "backlink", "ai"];
 
 export class Dock {
     public element: HTMLElement;

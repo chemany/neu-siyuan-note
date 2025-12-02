@@ -24,7 +24,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime/debug"
-	"strconv"
+	_ "strconv" // [OCR 功能已禁用] 保留 import 以避免编译错误
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -40,7 +40,7 @@ import (
 
 var (
 	TesseractBin     = "tesseract"
-	TesseractEnabled bool
+	TesseractEnabled = false // [OCR 功能已禁用] 强制设置为 false
 	TesseractMaxSize = 2 * 1000 * uint64(1000)
 	TesseractLangs   []string
 
@@ -283,15 +283,28 @@ func GetOcrJsonText(jsonData []map[string]interface{}) (ret string) {
 var tesseractInited = atomic.Bool{}
 
 func WaitForTesseractInit() {
+	// [OCR 功能已禁用] 直接返回，不等待初始化
+	tesseractInited.Store(true)
+	return
+	/*
 	for {
 		if tesseractInited.Load() {
 			return
 		}
 		time.Sleep(time.Second)
 	}
+	*/
 }
 
+// [OCR 功能已禁用] InitTesseract 不再初始化 Tesseract
 func InitTesseract() {
+	// OCR 功能已禁用，跳过 Tesseract 初始化
+	TesseractEnabled = false
+	tesseractInited.Store(true)
+	logging.LogInfof("tesseract-ocr disabled (OCR feature removed)")
+	return
+
+	/*
 	ver := getTesseractVer()
 	if "" == ver {
 		tesseractInited.Store(true)
@@ -328,6 +341,7 @@ func InitTesseract() {
 	TesseractLangs = filterTesseractLangs(langs)
 	logging.LogInfof("tesseract-ocr enabled [ver=%s, maxSize=%s, langs=%s]", ver, humanize.BytesCustomCeil(TesseractMaxSize, 2), strings.Join(TesseractLangs, "+"))
 	tesseractInited.Store(true)
+	*/
 }
 
 func filterTesseractLangs(langs []string) (ret []string) {

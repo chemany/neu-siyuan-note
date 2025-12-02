@@ -303,9 +303,9 @@ func ServeAPI(ginServer *gin.Engine) {
 	ginServer.Handle("POST", "/api/asset/getDocImageAssets", model.CheckWebAuth, getDocImageAssets)
 	ginServer.Handle("POST", "/api/asset/getDocAssets", model.CheckWebAuth, getDocAssets)
 	ginServer.Handle("POST", "/api/asset/renameAsset", model.CheckWebAuth, model.CheckAdminRole, model.CheckReadonly, renameAsset)
-	ginServer.Handle("POST", "/api/asset/getImageOCRText", model.CheckWebAuth, model.CheckAdminRole, model.CheckReadonly, getImageOCRText)
-	ginServer.Handle("POST", "/api/asset/setImageOCRText", model.CheckWebAuth, model.CheckAdminRole, model.CheckReadonly, setImageOCRText)
-	ginServer.Handle("POST", "/api/asset/ocr", model.CheckWebAuth, model.CheckAdminRole, model.CheckReadonly, ocr)
+	// [OCR 功能已禁用] ginServer.Handle("POST", "/api/asset/getImageOCRText", model.CheckWebAuth, model.CheckAdminRole, model.CheckReadonly, getImageOCRText)
+	// [OCR 功能已禁用] ginServer.Handle("POST", "/api/asset/setImageOCRText", model.CheckWebAuth, model.CheckAdminRole, model.CheckReadonly, setImageOCRText)
+	// [OCR 功能已禁用] ginServer.Handle("POST", "/api/asset/ocr", model.CheckWebAuth, model.CheckAdminRole, model.CheckReadonly, ocr)
 	ginServer.Handle("POST", "/api/asset/fullReindexAssetContent", model.CheckWebAuth, model.CheckAdminRole, model.CheckReadonly, fullReindexAssetContent)
 	ginServer.Handle("POST", "/api/asset/statAsset", model.CheckWebAuth, model.CheckAdminRole, statAsset)
 
@@ -374,6 +374,7 @@ func ServeAPI(ginServer *gin.Engine) {
 	ginServer.Handle("POST", "/api/setting/setSnippet", model.CheckWebAuth, model.CheckAdminRole, model.CheckReadonly, setConfSnippet)
 	ginServer.Handle("POST", "/api/setting/setEditorReadOnly", model.CheckWebAuth, model.CheckAdminRole, model.CheckReadonly, setEditorReadOnly)
 
+	// [关系图谱功能已禁用] 以下路由已注释，返回空数据
 	ginServer.Handle("POST", "/api/graph/resetGraph", model.CheckWebAuth, model.CheckAdminRole, model.CheckReadonly, resetGraph)
 	ginServer.Handle("POST", "/api/graph/resetLocalGraph", model.CheckWebAuth, model.CheckAdminRole, model.CheckReadonly, resetLocalGraph)
 	ginServer.Handle("POST", "/api/graph/getGraph", model.CheckWebAuth, getGraph)

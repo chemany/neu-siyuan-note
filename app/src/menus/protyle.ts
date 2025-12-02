@@ -487,6 +487,8 @@ export const refMenu = (protyle: IProtyle, element: HTMLElement) => {
             });
         }
     }).element);
+    // [关系图谱功能已禁用] 关系图谱菜单项已移除
+    /*
     window.siyuan.menus.menu.append(new MenuItem({
         id: "graphView",
         icon: "iconGraph",
@@ -499,6 +501,7 @@ export const refMenu = (protyle: IProtyle, element: HTMLElement) => {
             });
         }
     }).element);
+    */
     window.siyuan.menus.menu.append(new MenuItem({id: "separator_3", type: "separator"}).element);
     /// #endif
     if (!protyle.disabled) {
@@ -1228,6 +1231,8 @@ export const imgMenu = (protyle: IProtyle, range: Range, assetElement: HTMLEleme
                 }
             }).element);
         }
+        // [OCR 功能已禁用] OCR 菜单已移除
+        /*
         window.siyuan.menus.menu.append(new MenuItem({
             id: "ocr",
             label: "OCR",
@@ -1260,6 +1265,7 @@ export const imgMenu = (protyle: IProtyle, range: Range, assetElement: HTMLEleme
                 }
             }],
         }).element);
+        */
         window.siyuan.menus.menu.append(new MenuItem({
             id: "alignCenter",
             icon: "iconAlignCenter",
@@ -1444,6 +1450,8 @@ export const imgMenu = (protyle: IProtyle, range: Range, assetElement: HTMLEleme
             textElements[0].select();
         }
         window.siyuan.menus.menu.removeCB = () => {
+            // [OCR 功能已禁用] OCR 保存逻辑已移除
+            /*
             const ocrElement = window.siyuan.menus.menu.element.querySelector('[data-type="ocr"]') as HTMLTextAreaElement;
             if (ocrElement && ocrElement.dataset.ocrText !== ocrElement.value) {
                 fetchPost("/api/asset/setImageOCRText", {
@@ -1451,6 +1459,7 @@ export const imgMenu = (protyle: IProtyle, range: Range, assetElement: HTMLEleme
                     text: ocrElement.value
                 });
             }
+            */
             imgElement.setAttribute("alt", textElements[2].value.replace(/\n|\r\n|\r|\u2028|\u2029/g, ""));
             nodeElement.setAttribute("updated", dayjs().format("YYYYMMDDHHmmss"));
             updateTransaction(protyle, id, nodeElement.outerHTML, html);

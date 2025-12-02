@@ -418,6 +418,8 @@ const editKeydown = (app: App, event: KeyboardEvent) => {
         });
         return true;
     }
+    // [关系图谱功能已禁用] 以下快捷键处理已注释
+    /*
     if (matchHotKey(window.siyuan.config.keymap.editor.general.graphView.custom, event)) {
         event.preventDefault();
         if (range) {
@@ -439,6 +441,7 @@ const editKeydown = (app: App, event: KeyboardEvent) => {
         });
         return true;
     }
+    */
     if (matchHotKey(window.siyuan.config.keymap.editor.general.outline.custom, event)) {
         event.preventDefault();
         const offset = getSelectionOffset(target);

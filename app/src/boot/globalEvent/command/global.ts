@@ -83,12 +83,15 @@ export const globalCommand = (command: string, app: App) => {
         case "backlinks":
             getDockByType("backlink").toggleModel("backlink");
             return true;
+        // [关系图谱功能已禁用] 以下命令已注释
+        /*
         case "graphView":
             getDockByType("graph").toggleModel("graph");
             return true;
         case "globalGraph":
             getDockByType("globalGraph").toggleModel("globalGraph");
             return true;
+        */
         case "config":
             openSetting(app);
             return true;
@@ -175,6 +178,8 @@ export const globalCommand = (command: string, app: App) => {
                         rootId: childData.rootId,
                         title: closeData.title,
                     });
+                // [关系图谱功能已禁用] Graph 实例不再打开
+                /*
                 } else if (childData.instance === "Graph") {
                     openGraph({
                         app,
@@ -182,6 +187,7 @@ export const globalCommand = (command: string, app: App) => {
                         rootId: childData.rootId,
                         title: closeData.title
                     });
+                */
                 } else if (childData.instance === "Outline") {
                     openOutline({
                         app,
