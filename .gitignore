@@ -1,4 +1,45 @@
-# Binaries for programs and plugins
+# ========================================
+# 依赖库 (Dependencies) - 约 1.9G
+# ========================================
+app/node_modules/
+node_modules/
+**/node_modules/
+vendor/
+
+# ========================================
+# 构建产物 (Build outputs) - 约 460M
+# ========================================
+# Kernel 二进制文件 (~200M)
+kernel/kernel
+kernel/siyuan-kernel
+kernel/stage/
+app/kernel/
+app/kernel*
+app/SiYuan-Kernel
+**/*.bin
+**/SiYuan
+
+# Stage 构建目录 (~57M)
+app/stage/
+stage/
+
+# 其他构建目录
+app/build/
+app/dist/
+app/src/types/dist/
+electron/dist/
+dist/
+build/
+out/
+
+# ========================================
+# 大型工具 (Large tools) - 约 156M
+# ========================================
+app/pandoc/
+
+# ========================================
+# 二进制和可执行文件
+# ========================================
 *.exe
 !app/elevator/elevator-*.exe
 *.dll
@@ -7,112 +48,96 @@
 *.aar
 *.jar
 *.syso
-.DS_Store
-.eslintcache
-
-# Dependencies
-app/node_modules
-node_modules/
-**/node_modules/
-
-# Build directories
-app/stage/build
-app/build
-app/dist
-app/src/types/dist
-electron/dist
-dist/
-build/
-out/
-
-# Kernel binaries
-app/kernel*
-app/SiYuan-Kernel
-**/*.bin
-**/SiYuan
-
-# Platform-specific
-ios
-android
 *.app
 *.deb
 *.rpm
 *.snap
 
-# Test and profiling
-pprof
-*.test
-*.prof
-*.out
-coverage/
-.nyc_output
-
-# IDE
-.idea/
-.vscode/
-*.swp
-*.swo
-*~
-
-# Log files
-logs/
-*.log*
-npm-debug.log*
-yarn-debug.log*
-
-# NPM/Package managers
+# ========================================
+# 锁文件 (Lock files)
+# ========================================
 package-lock.json
 yarn.lock
 pnpm-lock.yaml
+go.work
+*.mod.sum
 
-# Cache
-.cache/
-.npm/
-.eslintcache
-.stylelintcache
-.nyc_output/
-
-# Workspace and data (remove sensitive data)
+# ========================================
+# 工作区和数据目录
+# ========================================
 workspace/
 data/temp/
 data/history/
 data/storage/
 **/snippets/
 
-# OS files
-Thumbs.db
-.DS_Store
-.Trash-*
-Desktop.ini
-
-# Temporary files
+# ========================================
+# 缓存和临时文件
+# ========================================
+.cache/
+.npm/
+.eslintcache
+.stylelintcache
+.nyc_output/
+pprof/
+coverage/
 *.tmp
 *.temp
 *.bak
 *.swp
 *.swo
+*~
 
-# Environment files
+# ========================================
+# 测试和性能分析
+# ========================================
+*.test
+*.prof
+*.out
+
+# ========================================
+# IDE 和编辑器
+# ========================================
+.idea/
+.vscode/
+
+# ========================================
+# 系统文件
+# ========================================
+.DS_Store
+Thumbs.db
+.Trash-*
+Desktop.ini
+
+# ========================================
+# 日志文件
+# ========================================
+logs/
+*.log
+*.log.*
+npm-debug.log*
+yarn-debug.log*
+
+# ========================================
+# 环境配置
+# ========================================
 .env
 .env.local
 .env.*.local
 
-# Build outputs and go specific
-vendor/
-*.mod.sum
-go.work
-
+# ========================================
 # Python
+# ========================================
 **/__pycache__/
 *.pyc
 *.pyo
 *.pyd
 .Python
 pip-log.txt
-pip-delete-this-directory.txt
 
-# Additional SiYuan specific
+# ========================================
+# SiYuan 特定
+# ========================================
 conf/app/
 **/conf/system/conf.json
 resources/*.asar
-stage/

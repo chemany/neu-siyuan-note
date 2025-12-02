@@ -70,7 +70,9 @@ export class Model {
         };
         ws.onmessage = (event) => {
             if (options.msgCallback) {
-                const data = processMessage(JSON.parse(event.data));
+                const rawData = JSON.parse(event.data);
+                console.log(`WebSocket [${options.type}] received:`, rawData.cmd, rawData);
+                const data = processMessage(rawData);
                 options.msgCallback.call(this, data);
             }
         };

@@ -138,7 +138,27 @@ func ParseJWT(tokenString string) (*jwt.Token, error) {
 }
 
 func ParseXAuthToken(r *http.Request) *jwt.Token {
+	// 1. 尝试从 X-Auth-Token header 获取
 	tokenString := r.Header.Get(XAuthTokenKey)
+	
+	// 2. 如果 header 中没有，尝试从 Cookie 获取
+	if tokenString == "" {
+		if cookie, err := r.Cookie("siyuan_token"); err == nil {
+			tokenString = cookie.Value
+		}
+	}
+	
+	// 3. 如果还是没有，尝试从 Authorization header 获取
+	if tokenString == "" {
+		authHeader := r.Header.Get("Authorization")
+		if authHeader != "" {
+			// 移除 "Bearer " 前缀
+			if len(authHeader) > 7 && authHeader[:7] == "Bearer " {
+				tokenString = authHeader[7:]
+			}
+		}
+	}
+	
 	if tokenString != "" {
 		if token, err := ParseJWT(tokenString); err != nil {
 			logging.LogErrorf("JWT parse failed: %s", err)

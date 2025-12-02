@@ -17,6 +17,7 @@ import {ipcRenderer} from "electron";
 /// #endif
 import {pushBack} from "../util/backForward";
 import {Asset} from "../asset";
+import {DocumentViewer} from "../asset/document";
 import {Layout} from "../layout";
 import {
     hasClosestBlock,
@@ -420,7 +421,7 @@ const switchEditor = (editor: Editor, options: IOpenFileOptions, allModels: IMod
 const newTab = (options: IOpenFileOptions) => {
     let tab: Tab;
     if (options.assetPath) {
-        const suffix = pathPosix().extname(options.assetPath).split("?")[0];
+        const suffix = pathPosix().extname(options.assetPath).split("?")[0].toLowerCase();
         if (Constants.SIYUAN_ASSETS_EXTS.includes(suffix)) {
             let icon = "iconPDF";
             if (Constants.SIYUAN_ASSETS_IMAGE.includes(suffix)) {
@@ -429,20 +430,39 @@ const newTab = (options: IOpenFileOptions) => {
                 icon = "iconRecord";
             } else if (Constants.SIYUAN_ASSETS_VIDEO.includes(suffix)) {
                 icon = "iconVideo";
+            } else if (Constants.SIYUAN_ASSETS_DOCUMENT.includes(suffix) || Constants.SIYUAN_ASSETS_TEXT.includes(suffix)) {
+                icon = "iconFile";
             }
-            tab = new Tab({
-                icon,
-                title: getDisplayName(options.assetPath),
-                callback(tab) {
-                    tab.addModel(new Asset({
-                        app: options.app,
-                        tab,
-                        path: options.assetPath,
-                        page: options.page,
-                    }));
-                    setPanelFocus(tab.panelElement.parentElement.parentElement);
-                }
-            });
+            
+            // 文档类型和文本类型使用 DocumentViewer 进行预览
+            if (Constants.SIYUAN_ASSETS_DOCUMENT.includes(suffix) || Constants.SIYUAN_ASSETS_TEXT.includes(suffix)) {
+                tab = new Tab({
+                    icon,
+                    title: getDisplayName(options.assetPath),
+                    callback(tab) {
+                        tab.addModel(new DocumentViewer({
+                            app: options.app,
+                            tab,
+                            path: options.assetPath,
+                        }));
+                        setPanelFocus(tab.panelElement.parentElement.parentElement);
+                    }
+                });
+            } else {
+                tab = new Tab({
+                    icon,
+                    title: getDisplayName(options.assetPath),
+                    callback(tab) {
+                        tab.addModel(new Asset({
+                            app: options.app,
+                            tab,
+                            path: options.assetPath,
+                            page: options.page,
+                        }));
+                        setPanelFocus(tab.panelElement.parentElement.parentElement);
+                    }
+                });
+            }
         }
     } else if (options.custom) {
         tab = new Tab({

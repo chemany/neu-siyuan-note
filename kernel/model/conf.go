@@ -167,8 +167,8 @@ func InitConf() {
 				Conf.Lang = util.Lang
 				logging.LogInfof("initialized language [%s] based on device locale", Conf.Lang)
 			} else {
-				logging.LogDebugf("check device locale failed [%s], using default language [en_US]", err)
-				util.Lang = "en_US"
+				logging.LogDebugf("check device locale failed [%s], using default language [zh_CN]", err)
+				util.Lang = "zh_CN"
 				Conf.Lang = util.Lang
 			}
 		}
@@ -187,7 +187,7 @@ func InitConf() {
 		}
 	}
 	if !langOK {
-		Conf.Lang = "en_US"
+		Conf.Lang = "zh_CN"
 		util.Lang = Conf.Lang
 	}
 	Conf.Appearance.Lang = Conf.Lang

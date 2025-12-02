@@ -92,7 +92,7 @@ import {
     updateCellsValue
 } from "../render/av/cell";
 import {openEmojiPanel, unicode2Emoji} from "../../emoji";
-import {openLink} from "../../editor/openLink";
+import {openLink, isDocumentLink} from "../../editor/openLink";
 import {mathRender} from "../render/mathRender";
 import {editAssetItem} from "../render/av/asset";
 import {img3115} from "../../boot/compatibleVersion";
@@ -2542,6 +2542,27 @@ export class WYSIWYG {
             if (event.target.tagName === "IMG" && !event.target.classList.contains("emoji")) {
                 previewDocImage((event.target as HTMLElement).getAttribute("src"), protyle.block.rootID);
                 return;
+            }
+            
+            // 双击文档链接打开预览
+            const aElement = hasClosestByAttribute(event.target, "data-type", "a") ||
+                hasClosestByClassName(event.target, "av__celltext--url");
+            if (aElement) {
+                let aLink = aElement.getAttribute("data-href") || "";
+                if (!aLink && aElement.classList.contains("av__celltext--url")) {
+                    aLink = aElement.textContent.trim();
+                    if (aElement.classList.contains("b3-chip")) {
+                        aLink = aElement.dataset.url;
+                    }
+                }
+                if (aLink && isDocumentLink(aLink)) {
+                    event.stopPropagation();
+                    event.preventDefault();
+                    // 阻止默认的双击选中文字行为
+                    window.getSelection()?.removeAllRanges();
+                    openLink(protyle, aLink, event, false, true);
+                    return;
+                }
             }
         });
         let mobileBlur = false;

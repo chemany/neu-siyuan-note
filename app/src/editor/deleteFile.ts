@@ -5,12 +5,49 @@ import {hasTopClosestByTag} from "../protyle/util/hasClosest";
 import {Constants} from "../constants";
 import {showMessage} from "../dialog/message";
 import {escapeHtml} from "../util/escape";
+import {getDockByType} from "../layout/tabUtil";
+import {Files} from "../layout/dock/Files";
+
+// 从文档树中移除指定的文档元素
+const removeDocFromTree = (pathString: string) => {
+    const fileModel = getDockByType("file")?.data?.file;
+    if (fileModel instanceof Files) {
+        const targetElement = fileModel.element.querySelector(`li[data-path="${pathString}"]`);
+        if (targetElement) {
+            // 如果有子节点列表，也一并删除
+            if (targetElement.nextElementSibling?.tagName === "UL") {
+                targetElement.nextElementSibling.remove();
+            }
+            // 检查父节点是否还有其他子节点
+            const parentUL = targetElement.parentElement;
+            if (parentUL && parentUL.childElementCount === 1) {
+                // 如果是最后一个子节点，隐藏父节点的展开箭头
+                const parentLI = parentUL.previousElementSibling;
+                if (parentLI && parentLI.tagName === "LI") {
+                    const toggleElement = parentLI.querySelector(".b3-list-item__toggle");
+                    if (toggleElement) {
+                        toggleElement.classList.add("fn__hidden");
+                    }
+                    const arrowElement = parentLI.querySelector(".b3-list-item__arrow");
+                    if (arrowElement) {
+                        arrowElement.classList.remove("b3-list-item__arrow--open");
+                    }
+                }
+                parentUL.remove();
+            } else {
+                targetElement.remove();
+            }
+        }
+    }
+};
 
 export const deleteFile = (notebookId: string, pathString: string) => {
     if (window.siyuan.config.fileTree.removeDocWithoutConfirm) {
         fetchPost("/api/filetree/removeDoc", {
             notebook: notebookId,
             path: pathString
+        }, () => {
+            removeDocFromTree(pathString);
         });
         return;
     }
@@ -30,6 +67,8 @@ export const deleteFile = (notebookId: string, pathString: string) => {
             fetchPost("/api/filetree/removeDoc", {
                 notebook: notebookId,
                 path: pathString
+            }, () => {
+                removeDocFromTree(pathString);
             });
         }, undefined, true);
     });
@@ -72,6 +111,9 @@ export const deleteFiles = (liElements: Element[]) => {
 <div class="ft__smaller ft__on-surface">${window.siyuan.languages.rollbackTip.replace("${x}", window.siyuan.config.editor.historyRetentionDays)}</div>`, () => {
                 fetchPost("/api/filetree/removeDocs", {
                     paths
+                }, () => {
+                    // 批量删除后从文档树中移除所有文档
+                    paths.forEach(path => removeDocFromTree(path));
                 });
             }, undefined, true);
     }

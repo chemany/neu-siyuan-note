@@ -389,3 +389,76 @@ func testEmbeddingConnection(c *gin.Context) {
 		"model":      model.Conf.AI.Embedding.Model,
 	}
 }
+
+// parseAttachment 解析附件内容（PDF等）
+func parseAttachment(c *gin.Context) {
+	ret := gulu.Ret.NewResult()
+	defer c.JSON(http.StatusOK, ret)
+
+	arg, ok := util.JsonArg(c, ret)
+	if !ok {
+		return
+	}
+
+	// 获取附件路径
+	assetPath, ok := arg["path"].(string)
+	if !ok || assetPath == "" {
+		ret.Code = -1
+		ret.Msg = "附件路径不能为空"
+		return
+	}
+
+	content, err := model.ParseAttachment(assetPath)
+	if err != nil {
+		ret.Code = -1
+		ret.Msg = fmt.Sprintf("解析附件失败: %v", err)
+		return
+	}
+
+	ret.Data = map[string]interface{}{
+		"path":    assetPath,
+		"content": content,
+	}
+}
+
+// batchParseAttachments 批量解析多个附件
+func batchParseAttachments(c *gin.Context) {
+	ret := gulu.Ret.NewResult()
+	defer c.JSON(http.StatusOK, ret)
+
+	arg, ok := util.JsonArg(c, ret)
+	if !ok {
+		return
+	}
+
+	pathsArg, ok := arg["paths"].([]interface{})
+	if !ok || len(pathsArg) == 0 {
+		ret.Code = -1
+		ret.Msg = "附件路径列表不能为空"
+		return
+	}
+
+	results := make([]map[string]interface{}, 0)
+	for _, p := range pathsArg {
+		assetPath, ok := p.(string)
+		if !ok {
+			continue
+		}
+
+		content, err := model.ParseAttachment(assetPath)
+		result := map[string]interface{}{
+			"path": assetPath,
+		}
+		if err != nil {
+			result["error"] = err.Error()
+			result["content"] = ""
+		} else {
+			result["content"] = content
+		}
+		results = append(results, result)
+	}
+
+	ret.Data = map[string]interface{}{
+		"results": results,
+	}
+}
