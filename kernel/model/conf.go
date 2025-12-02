@@ -32,7 +32,7 @@ import (
 	"github.com/88250/gulu"
 	"github.com/88250/lute"
 	"github.com/88250/lute/ast"
-	"github.com/Xuanwo/go-locale"
+	_ "github.com/Xuanwo/go-locale" // [Web 版默认语言] 保留 import
 	"github.com/sashabaranov/go-openai"
 	"github.com/siyuan-note/eventbus"
 	"github.com/siyuan-note/filelock"
@@ -43,7 +43,7 @@ import (
 	"github.com/siyuan-note/siyuan/kernel/treenode"
 	"github.com/siyuan-note/siyuan/kernel/util"
 	"golang.org/x/mod/semver"
-	"golang.org/x/text/language"
+	_ "golang.org/x/text/language" // [Web 版默认语言] 保留 import
 )
 
 var Conf *AppConf
@@ -148,8 +148,12 @@ func InitConf() {
 		}
 	} else {
 		if "" == Conf.Lang {
+			// [Web 版默认语言] 强制使用简体中文，不再检测系统语言
+			util.Lang = "zh_CN"
+			Conf.Lang = util.Lang
+			logging.LogInfof("initialized default language [zh_CN] for web version")
+			/*
 			// 未指定外观语言时使用系统语言
-
 			if userLang, err := locale.Detect(); err == nil {
 				var supportLangs []language.Tag
 				for lang := range util.Langs {
@@ -171,6 +175,7 @@ func InitConf() {
 				util.Lang = "zh_CN"
 				Conf.Lang = util.Lang
 			}
+			*/
 		}
 		util.Lang = Conf.Lang
 	}

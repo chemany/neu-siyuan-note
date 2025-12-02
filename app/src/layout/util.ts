@@ -287,33 +287,75 @@ const initInternalDock = (dockItem: Config.IUILayoutDockTab[]) => {
 };
 
 const JSONToDock = (json: any, app: App) => {
-    json.left.data.forEach((existItem: Config.IUILayoutDockTab[]) => {
-        initInternalDock(existItem);
+    // [Web 版布局优化] 将反向链接移到左侧，AI 移到左侧顶部，隐藏右侧 dock
+    
+    // 检查左侧是否有反向链接
+    let hasBacklink = false;
+    json.left.data.forEach((item: Config.IUILayoutDockTab[]) => {
+        item.forEach((subItem) => {
+            if (subItem.type === "backlink") {
+                hasBacklink = true;
+            }
+        });
     });
-    json.right.data.forEach((existItem: Config.IUILayoutDockTab[]) => {
-        initInternalDock(existItem);
-    });
+    
+    // 如果左侧没有反向链接，从右侧移动或添加
+    if (!hasBacklink) {
+        // 从右侧移除反向链接
+        json.right.data.forEach((item: Config.IUILayoutDockTab[], index: number) => {
+            json.right.data[index] = item.filter((subItem) => subItem.type !== "backlink");
+        });
+        // 添加到左侧
+        if (!json.left.data[1]) {
+            json.left.data[1] = [];
+        }
+        json.left.data[1].push({
+            type: "backlink",
+            size: { width: 320, height: 0 },
+            show: false,
+            icon: "iconLink",
+            hotkeyLangId: "backlinks",
+        });
+    }
+    
+    // 检查左侧是否有 AI
     let hasAI = false;
-    json.right.data.forEach((item: Config.IUILayoutDockTab[]) => {
+    json.left.data.forEach((item: Config.IUILayoutDockTab[]) => {
         item.forEach((subItem) => {
             if (subItem.type === "ai") {
                 hasAI = true;
             }
         });
     });
+    
+    // 如果左侧没有 AI，从右侧移动或添加到左侧顶部
     if (!hasAI) {
-        if (!json.right.data[0]) {
-            json.right.data[0] = [];
+        // 从右侧移除 AI
+        json.right.data.forEach((item: Config.IUILayoutDockTab[], index: number) => {
+            json.right.data[index] = item.filter((subItem) => subItem.type !== "ai");
+        });
+        // 添加到左侧顶部（第一个位置）
+        if (!json.left.data[0]) {
+            json.left.data[0] = [];
         }
-        json.right.data[0].push({
+        json.left.data[0].unshift({
             type: "ai",
             size: { width: 320, height: 0 },
-            show: true,
+            show: false,
             icon: "iconSparkles",
             hotkeyLangId: "ai",
         });
-        initInternalDock(json.right.data[0]);
     }
+    
+    // 清空右侧 dock 数据
+    json.right.data = [[], []];
+    
+    json.left.data.forEach((existItem: Config.IUILayoutDockTab[]) => {
+        initInternalDock(existItem);
+    });
+    json.right.data.forEach((existItem: Config.IUILayoutDockTab[]) => {
+        initInternalDock(existItem);
+    });
     json.bottom.data.forEach((existItem: Config.IUILayoutDockTab[]) => {
         initInternalDock(existItem);
     });
