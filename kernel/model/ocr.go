@@ -1,5 +1,7 @@
+// [OCR 功能已禁用] 本文件中的 OCR 相关功能已被注释
 package model
 
+/*
 import (
 	"path/filepath"
 	"strings"
@@ -78,3 +80,4 @@ func getUnOCRAssetsAbsPaths() (ret []string) {
 func FlushAssetsTextsJob() {
 	util.SaveAssetsTexts()
 }
+*/

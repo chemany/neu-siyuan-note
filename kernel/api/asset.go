@@ -29,7 +29,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/siyuan-note/filelock"
 	"github.com/siyuan-note/siyuan/kernel/model"
-	"github.com/siyuan-note/siyuan/kernel/sql"
+	_ "github.com/siyuan-note/siyuan/kernel/sql" // [OCR 功能已禁用] 保留 import
 	"github.com/siyuan-note/siyuan/kernel/util"
 )
 
@@ -104,6 +104,36 @@ func fullReindexAssetContent(c *gin.Context) {
 	model.ReindexAssetContent()
 }
 
+// [OCR 功能已禁用] getImageOCRText 返回空文本
+func getImageOCRText(c *gin.Context) {
+	ret := gulu.Ret.NewResult()
+	defer c.JSON(http.StatusOK, ret)
+
+	// OCR 功能已禁用，始终返回空文本
+	ret.Data = map[string]interface{}{
+		"text": "",
+	}
+}
+
+// [OCR 功能已禁用] setImageOCRText 不执行任何操作
+func setImageOCRText(c *gin.Context) {
+	ret := gulu.Ret.NewResult()
+	defer c.JSON(http.StatusOK, ret)
+	// OCR 功能已禁用，不执行任何操作
+}
+
+// [OCR 功能已禁用] ocr 返回 OCR 功能已禁用的错误
+func ocr(c *gin.Context) {
+	ret := gulu.Ret.NewResult()
+	defer c.JSON(http.StatusOK, ret)
+
+	ret.Code = -1
+	ret.Msg = "OCR 功能已禁用 / OCR feature is disabled"
+	ret.Data = map[string]interface{}{"closeTimeout": 3000}
+}
+
+/*
+// 原始 OCR 函数实现（已禁用）
 func getImageOCRText(c *gin.Context) {
 	ret := gulu.Ret.NewResult()
 	defer c.JSON(http.StatusOK, ret)
@@ -174,6 +204,7 @@ func ocr(c *gin.Context) {
 		"ocrJSON": ocrJSON,
 	}
 }
+*/
 
 func renameAsset(c *gin.Context) {
 	ret := gulu.Ret.NewResult()

@@ -30,7 +30,7 @@ import (
 	"github.com/88250/lute/render"
 	"github.com/88250/vitess-sqlparser/sqlparser"
 	"github.com/siyuan-note/logging"
-	"github.com/siyuan-note/siyuan/kernel/cache"
+	_ "github.com/siyuan-note/siyuan/kernel/cache" // [OCR 功能已禁用] 保留 import
 	"github.com/siyuan-note/siyuan/kernel/util"
 )
 
@@ -161,7 +161,11 @@ func ExportNodeStdMd(node *ast.Node, luteEngine *lute.Lute) string {
 	return markdown
 }
 
+// [OCR 功能已禁用] IsNodeOCRed 始终返回 true
 func IsNodeOCRed(node *ast.Node) (ret bool) {
+	// OCR 功能已禁用，始终返回 true 表示节点已完成 OCR 处理
+	return true
+	/*
 	if !util.TesseractEnabled || nil == node {
 		return true
 	}
@@ -191,6 +195,7 @@ func IsNodeOCRed(node *ast.Node) (ret bool) {
 		return ast.WalkContinue
 	})
 	return
+	*/
 }
 
 func GetNodeSrcTokens(n *ast.Node) (ret string) {

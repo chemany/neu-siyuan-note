@@ -99,6 +99,8 @@ export const openTitleMenu = (protyle: IProtyle, position: IPosition, from: stri
                 });
             }
         }).element);
+        // [关系图谱功能已禁用] 关系图谱菜单项已移除
+        /*
         window.siyuan.menus.menu.append(new MenuItem({
             id: "graphView",
             icon: "iconGraph",
@@ -114,6 +116,7 @@ export const openTitleMenu = (protyle: IProtyle, position: IPosition, from: stri
                 });
             }
         }).element);
+        */
         /// #endif
         window.siyuan.menus.menu.append(new MenuItem({id: "separator_2", type: "separator"}).element);
         window.siyuan.menus.menu.append(new MenuItem({
