@@ -61,7 +61,7 @@ func main() {
 	job.StartCron()
 
 	go util.LoadSysFonts()
-	go model.AutoGenerateFileHistory()
+	// [历史记录功能已禁用] go model.AutoGenerateFileHistory()
 	go cache.LoadAssets()
 	go util.CheckFileSysStatus()
 

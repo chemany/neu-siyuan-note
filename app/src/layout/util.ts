@@ -287,7 +287,7 @@ const initInternalDock = (dockItem: Config.IUILayoutDockTab[]) => {
 };
 
 const JSONToDock = (json: any, app: App) => {
-    // [Web 版布局优化] 将反向链接移到左侧，AI 移到左侧顶部，隐藏右侧 dock
+    // [Web 版布局优化] 将反向链接移到左侧，AI 移到右侧（通过顶部按钮触发）
     
     // 检查左侧是否有反向链接
     let hasBacklink = false;
@@ -318,9 +318,14 @@ const JSONToDock = (json: any, app: App) => {
         });
     }
     
-    // 检查左侧是否有 AI
+    // 从左侧移除 AI（如果存在）
+    json.left.data.forEach((item: Config.IUILayoutDockTab[], index: number) => {
+        json.left.data[index] = item.filter((subItem) => subItem.type !== "ai");
+    });
+    
+    // 检查右侧是否有 AI
     let hasAI = false;
-    json.left.data.forEach((item: Config.IUILayoutDockTab[]) => {
+    json.right.data.forEach((item: Config.IUILayoutDockTab[]) => {
         item.forEach((subItem) => {
             if (subItem.type === "ai") {
                 hasAI = true;
@@ -328,27 +333,19 @@ const JSONToDock = (json: any, app: App) => {
         });
     });
     
-    // 如果左侧没有 AI，从右侧移动或添加到左侧顶部
+    // 如果右侧没有 AI，添加到右侧顶部
     if (!hasAI) {
-        // 从右侧移除 AI
-        json.right.data.forEach((item: Config.IUILayoutDockTab[], index: number) => {
-            json.right.data[index] = item.filter((subItem) => subItem.type !== "ai");
-        });
-        // 添加到左侧顶部（第一个位置）
-        if (!json.left.data[0]) {
-            json.left.data[0] = [];
+        if (!json.right.data[0]) {
+            json.right.data[0] = [];
         }
-        json.left.data[0].unshift({
+        json.right.data[0].unshift({
             type: "ai",
-            size: { width: 320, height: 0 },
+            size: { width: 360, height: 0 },
             show: false,
             icon: "iconSparkles",
             hotkeyLangId: "ai",
         });
     }
-    
-    // 清空右侧 dock 数据
-    json.right.data = [[], []];
     
     json.left.data.forEach((existItem: Config.IUILayoutDockTab[]) => {
         initInternalDock(existItem);
