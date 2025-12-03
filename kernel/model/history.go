@@ -50,12 +50,18 @@ import (
 
 var historyTicker = time.NewTicker(time.Minute * 10)
 
+// [历史记录功能已禁用] AutoGenerateFileHistory 不再自动生成历史
 func AutoGenerateFileHistory() {
+	// 历史记录功能已禁用，直接返回
+	logging.LogInfof("auto generate file history disabled for web version")
+	return
+	/*
 	ChangeHistoryTick(Conf.Editor.GenerateHistoryInterval)
 	for {
 		<-historyTicker.C
 		task.AppendTask(task.HistoryGenerateFile, generateFileHistory)
 	}
+	*/
 }
 
 func generateFileHistory() {

@@ -20,6 +20,7 @@ import * as dayjs from "dayjs";
 import { exportLayout } from "./util";
 import { commandPanel } from "../boot/globalEvent/command/panel";
 import { openTopBarMenu } from "../plugin/openTopBarMenu";
+import { getDockByType } from "./tabUtil";
 
 export const initBar = (app: App) => {
     const toolbarElement = document.getElementById("toolbar");
@@ -52,6 +53,9 @@ export const initBar = (app: App) => {
 </div>
 <div id="barSearch" class="toolbar__item ariaLabel" aria-label="${window.siyuan.languages.globalSearch} ${updateHotkeyTip(window.siyuan.config.keymap.general.globalSearch.custom)}">
     <svg><use xlink:href="#iconSearch"></use></svg>
+</div>
+<div id="barAI" class="toolbar__item ariaLabel" aria-label="AI 文档分析">
+    <svg><use xlink:href="#iconSparkles"></use></svg>
 </div>
 <div id="barZoom" class="toolbar__item ariaLabel${(window.siyuan.storage[Constants.LOCAL_ZOOM] === 1 || isBrowser()) ? " fn__none" : ""}" aria-label="${window.siyuan.languages.zoom}">
     <svg><use xlink:href="#iconZoom${window.siyuan.storage[Constants.LOCAL_ZOOM] > 1 ? "In" : "Out"}"></use></svg>
@@ -177,6 +181,14 @@ export const initBar = (app: App) => {
                     app,
                     hotkey: Constants.DIALOG_GLOBALSEARCH
                 });
+                event.stopPropagation();
+                break;
+            } else if (targetId === "barAI") {
+                // 打开右侧 AI 面板
+                const aiDock = getDockByType("ai");
+                if (aiDock) {
+                    aiDock.toggleModel("ai", false, false);
+                }
                 event.stopPropagation();
                 break;
             } else if (targetId === "barPlugins") {
