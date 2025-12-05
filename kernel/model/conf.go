@@ -131,7 +131,12 @@ func InitConf() {
 		}
 	}
 
-	if "" != util.Lang {
+	// [Web 版默认语言] Docker 容器版强制使用简体中文
+	if util.ContainerDocker == util.Container {
+		util.Lang = "zh_CN"
+		Conf.Lang = "zh_CN"
+		logging.LogInfof("forced language [zh_CN] for Docker container")
+	} else if "" != util.Lang {
 		initialized := false
 		if util.ContainerAndroid == util.Container || util.ContainerIOS == util.Container || util.ContainerHarmony == util.Container {
 			// 移动端以上次设置的外观语言为准
@@ -148,34 +153,10 @@ func InitConf() {
 		}
 	} else {
 		if "" == Conf.Lang {
-			// [Web 版默认语言] 强制使用简体中文，不再检测系统语言
+			// 默认使用简体中文
 			util.Lang = "zh_CN"
 			Conf.Lang = util.Lang
-			logging.LogInfof("initialized default language [zh_CN] for web version")
-			/*
-			// 未指定外观语言时使用系统语言
-			if userLang, err := locale.Detect(); err == nil {
-				var supportLangs []language.Tag
-				for lang := range util.Langs {
-					if tag, err := language.Parse(lang); err == nil {
-						supportLangs = append(supportLangs, tag)
-					} else {
-						logging.LogErrorf("load language [%s] failed: %s", lang, err)
-					}
-				}
-				matcher := language.NewMatcher(supportLangs)
-				lang, _, _ := matcher.Match(userLang)
-				base, _ := lang.Base()
-				region, _ := lang.Region()
-				util.Lang = base.String() + "_" + region.String()
-				Conf.Lang = util.Lang
-				logging.LogInfof("initialized language [%s] based on device locale", Conf.Lang)
-			} else {
-				logging.LogDebugf("check device locale failed [%s], using default language [zh_CN]", err)
-				util.Lang = "zh_CN"
-				Conf.Lang = util.Lang
-			}
-			*/
+			logging.LogInfof("initialized default language [zh_CN]")
 		}
 		util.Lang = Conf.Lang
 	}

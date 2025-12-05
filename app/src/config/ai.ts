@@ -351,7 +351,7 @@ export const ai = {
             provider: "siliconflow",
             apiKey: "",
             model: "BAAI/bge-large-zh-v1.5",
-            apiBaseUrl: "https://api.siliconflow.cn/v1/embeddings",
+            apiBaseUrl: "https://api.siliconflow.cn/v1",
             encodingFormat: "float",
             timeout: 30,
             enabled: false
@@ -407,7 +407,7 @@ export const ai = {
         API地址
         <div class="b3-label__text">向量化服务的API端点地址</div>
         <div class="fn__hr"></div>
-        <input class="b3-text-field fn__block" id="embeddingApiBaseUrl" value="${embeddingConfig.apiBaseUrl}" placeholder="https://api.siliconflow.cn/v1/embeddings"/>
+        <input class="b3-text-field fn__block" id="embeddingApiBaseUrl" value="${embeddingConfig.apiBaseUrl}" placeholder="https://api.siliconflow.cn/v1"/>
     </div>
 </div>
 <div class="fn__flex b3-label">

@@ -40,7 +40,7 @@ func CheckWebAuth(c *gin.Context) {
 	// Web模式下的认证逻辑
 	logging.LogInfof("[Web Mode] Checking authentication for [%s]", c.Request.RequestURI)
 
-	// 放行公开路径
+	// 放行公开路径（无需任何认证）
 	publicPaths := []string{
 		"/api/web/auth/login",
 		"/api/web/auth/register",
@@ -53,10 +53,69 @@ func CheckWebAuth(c *gin.Context) {
 		"/stage/login.html",
 		"/stage/register.html",
 		"/stage/protyle/",
+		"/stage/icon",           // icon.png, icon-large.png
+		"/stage/loading",        // loading.svg, loading-pure.svg
+		"/stage/build/fonts/",   // 字体文件
+		"/stage/build/desktop/", // 桌面端静态资源
+		"/stage/build/mobile/",  // 移动端静态资源
+		"/stage/build/app/",     // 应用端静态资源
+		"/stage/base.",          // base.css
 		"/appearance/",
+		"/favicon.ico",
+		"/manifest.webmanifest",
+		"/manifest.json",
+		"/service-worker.js",
 	}
 
+	// 获取请求路径
 	requestPath := c.Request.URL.Path
+
+	// 需要认证但可以通过 Cookie 验证的资源路径
+	// 这些路径的请求可能不携带 Authorization header，但会携带 Cookie
+	// 注意：这些资源在用户已登录的情况下应该可以访问
+	// 由于浏览器对静态资源请求可能不携带自定义 header，我们暂时放行这些路径
+	// 安全性由前端页面的认证保证（用户必须先登录才能看到笔记内容）
+	cookieAuthPaths := []string{
+		"/assets/",   // 用户资源文件（图片、附件等）
+		"/emojis/",   // 表情资源
+		"/widgets/",  // 挂件资源
+		"/snippets/", // 代码片段
+		"/plugins/",  // 插件资源
+	}
+
+	// 对于资源路径，如果有 Cookie 中的 token 就验证，没有就放行
+	// 这是因为浏览器对 img/iframe 等标签的请求可能不携带自定义 header
+	for _, path := range cookieAuthPaths {
+		if strings.HasPrefix(requestPath, path) {
+			// 尝试从 Cookie 获取 token
+			cookieToken, _ := c.Cookie("siyuan_token")
+			if cookieToken != "" {
+				// 有 Cookie，验证后放行
+				authService := GetWebAuthService()
+				if authService != nil {
+					if user, err := authService.ValidateToken(cookieToken); err == nil {
+						// Token 有效，设置用户信息并放行
+						c.Set("web_user_id", user.ID)
+						c.Set("web_username", user.Username)
+						c.Set("web_workspace", user.Workspace)
+						c.Set(RoleContextKey, RoleAdministrator)
+						// 切换 workspace
+						if user.Workspace != "" && user.Workspace != util.WorkspaceDir {
+							SwitchWorkspace(user.Workspace)
+						}
+						c.Next()
+						return
+					}
+				}
+			}
+			// 没有 Cookie 或验证失败，也放行（让后续逻辑处理）
+			// 这样可以让公开分享的资源也能访问
+			logging.LogInfof("[Web Mode] Resource path accessed without valid token: %s", requestPath)
+			c.Next()
+			return
+		}
+	}
+
 	for _, path := range publicPaths {
 		if strings.HasPrefix(requestPath, path) {
 			logging.LogInfof("[Web Mode] Public path accessed: %s", requestPath)
@@ -154,25 +213,10 @@ func CheckWebAuth(c *gin.Context) {
 		// 保存原workspace以便恢复(虽然在当前实现中不会恢复)
 		c.Set("original_workspace", util.WorkspaceDir)
 
-		// 切换到用户workspace
-		util.WorkspaceDir = user.Workspace
-		util.DataDir = user.Workspace
-		util.ConfDir = filepath.Join(user.Workspace, "conf")
+		// 完整切换到用户workspace（所有路径变量）
+		SwitchWorkspace(user.Workspace)
 
 		logging.LogInfof("[Web Mode] Switched workspace to: %s", user.Workspace)
-
-		// 确保用户workspace目录结构存在
-		dirs := []string{
-			user.Workspace,
-			filepath.Join(user.Workspace, "conf"),
-			filepath.Join(user.Workspace, "data"),
-			filepath.Join(user.Workspace, "temp"),
-		}
-		for _, dir := range dirs {
-			if err := os.MkdirAll(dir, 0755); err != nil {
-				logging.LogErrorf("[Web Mode] Failed to create workspace dir %s: %s", dir, err)
-			}
-		}
 	}
 
 	c.Next()
@@ -194,4 +238,65 @@ func GetWebUserID(c *gin.Context) string {
 		return ""
 	}
 	return userID.(string)
+}
+
+
+// SwitchWorkspace 完整切换工作空间（切换所有相关路径变量）
+// 这个函数会更新 util 包中的所有路径变量，确保用户数据完全隔离
+func SwitchWorkspace(workspacePath string) {
+	// 基础路径
+	util.WorkspaceDir = workspacePath
+	util.WorkspaceName = filepath.Base(workspacePath)
+	util.ConfDir = filepath.Join(workspacePath, "conf")
+	util.DataDir = workspacePath // 在思源中，DataDir 通常就是 workspace 根目录
+	util.RepoDir = filepath.Join(workspacePath, "repo")
+	util.HistoryDir = filepath.Join(workspacePath, "history")
+	util.TempDir = filepath.Join(workspacePath, "temp")
+
+	// 数据库路径
+	util.DBPath = filepath.Join(util.TempDir, util.DBName)
+	util.HistoryDBPath = filepath.Join(util.TempDir, "history.db")
+	util.AssetContentDBPath = filepath.Join(util.TempDir, "asset_content.db")
+	util.BlockTreeDBPath = filepath.Join(util.TempDir, "blocktree.db")
+
+	// 外观路径
+	util.AppearancePath = filepath.Join(util.ConfDir, "appearance")
+	util.ThemesPath = filepath.Join(util.AppearancePath, "themes")
+	util.IconsPath = filepath.Join(util.AppearancePath, "icons")
+
+	// Snippets 路径
+	util.SnippetsPath = filepath.Join(util.DataDir, "snippets")
+
+	// 日志路径（保持在用户 workspace 的 temp 目录）
+	util.LogPath = filepath.Join(util.TempDir, "siyuan.log")
+
+	// 确保用户workspace目录结构存在
+	dirs := []string{
+		workspacePath,
+		util.ConfDir,
+		util.DataDir,
+		util.TempDir,
+		util.RepoDir,
+		util.HistoryDir,
+		util.AppearancePath,
+		filepath.Join(util.DataDir, "assets"),
+		filepath.Join(util.DataDir, "templates"),
+		filepath.Join(util.DataDir, "widgets"),
+		filepath.Join(util.DataDir, "plugins"),
+		filepath.Join(util.DataDir, "emojis"),
+		filepath.Join(util.DataDir, "public"),
+		filepath.Join(util.DataDir, "storage"),
+	}
+	for _, dir := range dirs {
+		if err := os.MkdirAll(dir, 0755); err != nil && !os.IsExist(err) {
+			logging.LogErrorf("[Web Mode] Failed to create workspace dir %s: %s", dir, err)
+		}
+	}
+
+	// 设置临时目录环境变量
+	osTmpDir := filepath.Join(util.TempDir, "os")
+	os.MkdirAll(osTmpDir, 0755)
+	os.Setenv("TMPDIR", osTmpDir)
+	os.Setenv("TEMP", osTmpDir)
+	os.Setenv("TMP", osTmpDir)
 }

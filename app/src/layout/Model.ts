@@ -104,6 +104,12 @@ export class Model {
         if (!this.ws) { // Inbox 无 ws
             return;
         }
+        // 检查 WebSocket 状态，只有在 OPEN 状态才发送
+        // readyState: 0=CONNECTING, 1=OPEN, 2=CLOSING, 3=CLOSED
+        if (this.ws.readyState !== WebSocket.OPEN) {
+            console.debug(`WebSocket not ready (state=${this.ws.readyState}), skip sending: ${cmd}`);
+            return;
+        }
         this.reqId = process ? 0 : new Date().getTime();
         this.ws.send(JSON.stringify({
             cmd,

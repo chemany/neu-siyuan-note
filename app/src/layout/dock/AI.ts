@@ -456,23 +456,94 @@ export class AI extends Model {
         
         console.log("[AI] 发送给AI的完整消息:", JSON.stringify(messages, null, 2));
 
-        try {
-            // 使用fetchSyncPost确保认证信息被正确传递
-            const result = await fetchSyncPost('/api/ai/chat', {
-                messages: messages,
-                stream: false
-            });
+        // 使用流式 API
+        return this.callAIStream(messages);
+    }
 
-            if (result.code !== 0) {
-                throw new Error(result.msg || "AI服务返回错误");
+    // 流式调用 AI API
+    private async callAIStream(messages: any[]): Promise<string> {
+        return new Promise((resolve, reject) => {
+            let fullContent = "";
+            
+            // 获取认证 token
+            const token = localStorage.getItem("siyuan_token") || "";
+            
+            fetch('/api/ai/chatStream', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`,
+                    'X-Auth-Token': token
+                },
+                body: JSON.stringify({ messages }),
+                credentials: 'include'
+            }).then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const reader = response.body?.getReader();
+                if (!reader) {
+                    throw new Error("无法获取响应流");
+                }
+                
+                const decoder = new TextDecoder();
+                
+                const readStream = () => {
+                    reader.read().then(({ done, value }) => {
+                        if (done) {
+                            resolve(fullContent || "AI 没有返回内容");
+                            return;
+                        }
+                        
+                        const chunk = decoder.decode(value, { stream: true });
+                        const lines = chunk.split('\n');
+                        
+                        for (const line of lines) {
+                            if (line.startsWith('data: ')) {
+                                try {
+                                    const data = JSON.parse(line.slice(6));
+                                    if (data.error) {
+                                        reject(new Error(data.error));
+                                        return;
+                                    }
+                                    if (data.token) {
+                                        fullContent += data.token;
+                                        // 实时更新显示
+                                        this.updateStreamingMessage(fullContent);
+                                    }
+                                    if (data.done) {
+                                        resolve(fullContent || "AI 没有返回内容");
+                                        return;
+                                    }
+                                } catch (e) {
+                                    // 忽略解析错误
+                                }
+                            }
+                        }
+                        
+                        readStream();
+                    }).catch(reject);
+                };
+                
+                readStream();
+            }).catch(reject);
+        });
+    }
+
+    // 实时更新流式消息显示
+    private updateStreamingMessage(content: string) {
+        const messagesContainer = this.element.querySelector('[data-type="messages"]');
+        if (!messagesContainer) return;
+        
+        // 查找最后一条 AI 消息并更新
+        const lastMessage = messagesContainer.lastElementChild;
+        if (lastMessage) {
+            const contentDiv = lastMessage.querySelector('div:last-child');
+            if (contentDiv) {
+                contentDiv.innerHTML = this.escapeHtml(content);
+                messagesContainer.scrollTop = messagesContainer.scrollHeight;
             }
-
-            // Handle different response structures
-            return result.data?.content || result.data?.message || result.data || "抱歉，AI没有返回有效内容";
-
-        } catch (error) {
-            console.error("AI API调用失败:", error);
-            throw error;
         }
     }
 

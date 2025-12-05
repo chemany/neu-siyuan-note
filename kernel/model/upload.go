@@ -90,9 +90,20 @@ func InsertLocalAssets(id string, assetAbsPaths []string, isUpload bool) (succMa
 			return
 		}
 
-		if existAssetPath := GetAssetPathByHash(hash); "" != existAssetPath {
-			// 已经存在同样数据的资源文件的话不重复保存
+		// 多用户模式：检查文件是否在当前用户的工作空间中
+		existAssetPath := GetAssetPathByHash(hash)
+		existInCurrentWorkspace := false
+		if "" != existAssetPath {
+			checkPath := filepath.Join(util.DataDir, existAssetPath)
+			if gulu.File.IsExist(checkPath) {
+				existInCurrentWorkspace = true
+			}
+		}
+
+		if existInCurrentWorkspace {
+			// 文件存在于当前工作空间，直接使用
 			succMap[baseName] = existAssetPath
+			f.Close()
 		} else {
 			fName = util.AssetName(fName, ast.NewNodeID())
 			writePath := filepath.Join(assetsDirPath, fName)
@@ -109,6 +120,9 @@ func InsertLocalAssets(id string, assetAbsPaths []string, isUpload bool) (succMa
 			p := "assets/" + fName
 			succMap[baseName] = p
 			cache.SetAssetHash(hash, p)
+
+			// 自动向量化
+			EnqueueAssetVectorize(writePath)
 		}
 	}
 	IncSync()
@@ -200,9 +214,20 @@ func Upload(c *gin.Context) {
 			break
 		}
 
-		if existAssetPath := GetAssetPathByHash(hash); "" != existAssetPath {
-			// 已经存在同样数据的资源文件的话不重复保存
+		// 多用户模式：检查文件是否在当前用户的工作空间中
+		existAssetPath := GetAssetPathByHash(hash)
+		existInCurrentWorkspace := false
+		if "" != existAssetPath {
+			checkPath := filepath.Join(util.DataDir, existAssetPath)
+			if gulu.File.IsExist(checkPath) {
+				existInCurrentWorkspace = true
+			}
+		}
+
+		if existInCurrentWorkspace {
+			// 文件存在于当前工作空间，直接使用
 			succMap[baseName] = existAssetPath
+			f.Close()
 		} else {
 			if skipIfDuplicated {
 				// 复制 PDF 矩形注解时不再重复插入图片 No longer upload image repeatedly when copying PDF rectangle annotation https://github.com/siyuan-note/siyuan/issues/10666
@@ -316,6 +341,12 @@ func Upload(c *gin.Context) {
 			p := strings.TrimPrefix(path.Join(relAssetsDirPath, fName), "/")
 			succMap[baseName] = p
 			cache.SetAssetHash(hash, p)
+
+			// 自动向量化
+			// 如果是解压后的文件夹，暂时不支持自动向量化
+			if !needUnzip2Dir {
+				EnqueueAssetVectorize(writePath)
+			}
 		}
 	}
 

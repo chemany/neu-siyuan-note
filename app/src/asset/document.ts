@@ -5,6 +5,8 @@ import {App} from "../index";
 import {clearOBG} from "../layout/dock/util";
 import {pathPosix} from "../util/pathName";
 import * as mammoth from "mammoth";
+import JSZip from "jszip";
+import * as XLSX from "xlsx";
 
 export class DocumentViewer extends Model {
     public path: string;
@@ -236,10 +238,451 @@ export class DocumentViewer extends Model {
                     <a href='${localUrl}' download class='b3-button b3-button--outline' style='text-decoration:none'>下载文件</a>
                 </div>`;
             }
+        } else if (ext === ".pptx") {
+            // 对于 .pptx 文件，使用 JSZip 解析并渲染
+            await this.renderPptxFile(localUrl, content);
+        } else if (ext === ".xls" || ext === ".xlsx") {
+            // 对于 Excel 文件，使用 xlsx 库解析并渲染
+            await this.renderExcelFile(localUrl, content);
         } else {
             // 其他 Office 文件类型显示下载提示
             content.innerHTML = `<div style='text-align:center;padding:40px'>
                 <p style='color:var(--b3-theme-on-surface-light);margin-bottom:16px'>此文件类型 (${ext}) 暂不支持在线预览</p>
+                <a href='${localUrl}' download class='b3-button b3-button--outline' style='text-decoration:none'>下载文件</a>
+            </div>`;
+        }
+    }
+
+    private async renderPptxFile(localUrl: string, content: HTMLElement) {
+        try {
+            const response = await fetch(localUrl);
+            if (!response.ok) throw new Error("HTTP " + response.status);
+            const arrayBuffer = await response.arrayBuffer();
+            
+            const zip = await JSZip.loadAsync(arrayBuffer);
+            
+            // 获取幻灯片数量
+            const slideFiles: string[] = [];
+            zip.forEach((relativePath) => {
+                if (relativePath.match(/^ppt\/slides\/slide\d+\.xml$/)) {
+                    slideFiles.push(relativePath);
+                }
+            });
+            
+            // 按数字排序
+            slideFiles.sort((a, b) => {
+                const numA = parseInt(a.match(/slide(\d+)\.xml/)?.[1] || "0");
+                const numB = parseInt(b.match(/slide(\d+)\.xml/)?.[1] || "0");
+                return numA - numB;
+            });
+            
+            if (slideFiles.length === 0) {
+                throw new Error("无法解析 PPTX 文件：未找到幻灯片");
+            }
+            
+            // 解析幻灯片内容
+            const slides: { texts: string[], images: string[] }[] = [];
+            const mediaFiles: Map<string, string> = new Map();
+            
+            // 提取媒体文件
+            const mediaPromises: Promise<void>[] = [];
+            zip.forEach((relativePath, file) => {
+                if (relativePath.startsWith("ppt/media/")) {
+                    const promise = file.async("base64").then(base64 => {
+                        const ext = relativePath.split(".").pop()?.toLowerCase() || "png";
+                        const mimeType = ext === "jpg" || ext === "jpeg" ? "image/jpeg" : 
+                                        ext === "png" ? "image/png" : 
+                                        ext === "gif" ? "image/gif" : "image/png";
+                        mediaFiles.set(relativePath, `data:${mimeType};base64,${base64}`);
+                    });
+                    mediaPromises.push(promise);
+                }
+            });
+            await Promise.all(mediaPromises);
+            
+            // 解析每张幻灯片
+            for (const slideFile of slideFiles) {
+                const slideXml = await zip.file(slideFile)?.async("string");
+                if (!slideXml) continue;
+                
+                const slideData: { texts: string[], images: string[] } = { texts: [], images: [] };
+                
+                // 提取文本内容
+                const textMatches = slideXml.matchAll(/<a:t>([^<]*)<\/a:t>/g);
+                for (const match of textMatches) {
+                    const text = match[1].trim();
+                    if (text) {
+                        slideData.texts.push(text);
+                    }
+                }
+                
+                // 解析关系文件获取图片引用
+                const slideNum = slideFile.match(/slide(\d+)\.xml/)?.[1];
+                const relsFile = `ppt/slides/_rels/slide${slideNum}.xml.rels`;
+                const relsXml = await zip.file(relsFile)?.async("string");
+                
+                if (relsXml) {
+                    const relMatches = relsXml.matchAll(/Target="([^"]*media\/[^"]*)"/g);
+                    for (const match of relMatches) {
+                        let target = match[1];
+                        if (target.startsWith("../")) {
+                            target = "ppt/" + target.substring(3);
+                        }
+                        const dataUrl = mediaFiles.get(target);
+                        if (dataUrl) {
+                            slideData.images.push(dataUrl);
+                        }
+                    }
+                }
+                
+                slides.push(slideData);
+            }
+            
+            // 渲染幻灯片
+            content.innerHTML = "";
+            
+            const style = document.createElement("style");
+            style.textContent = `
+                .pptx-container { max-width: 1000px; margin: 0 auto; }
+                .pptx-slide { 
+                    background: white; 
+                    border-radius: 8px; 
+                    box-shadow: 0 2px 8px rgba(0,0,0,0.15); 
+                    margin-bottom: 24px; 
+                    overflow: hidden;
+                }
+                .pptx-slide-header {
+                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    color: white;
+                    padding: 8px 16px;
+                    font-size: 12px;
+                    font-weight: 500;
+                }
+                .pptx-slide-content {
+                    padding: 24px;
+                    min-height: 200px;
+                    aspect-ratio: 16/9;
+                    display: flex;
+                    flex-direction: column;
+                    justify-content: center;
+                }
+                .pptx-slide-text {
+                    color: #333;
+                    font-size: 18px;
+                    line-height: 1.6;
+                    margin-bottom: 8px;
+                }
+                .pptx-slide-text:first-child {
+                    font-size: 24px;
+                    font-weight: 600;
+                    color: #1a1a1a;
+                    margin-bottom: 16px;
+                }
+                .pptx-slide-images {
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: 12px;
+                    margin-top: 16px;
+                }
+                .pptx-slide-images img {
+                    max-width: 100%;
+                    max-height: 300px;
+                    border-radius: 4px;
+                    object-fit: contain;
+                }
+                .pptx-nav {
+                    position: sticky;
+                    top: 0;
+                    background: var(--b3-theme-surface);
+                    padding: 12px 16px;
+                    margin: -16px -16px 16px -16px;
+                    border-bottom: 1px solid var(--b3-border-color);
+                    display: flex;
+                    align-items: center;
+                    gap: 12px;
+                    z-index: 10;
+                }
+                .pptx-nav-info {
+                    color: var(--b3-theme-on-surface);
+                    font-size: 13px;
+                }
+            `;
+            content.appendChild(style);
+            
+            const nav = document.createElement("div");
+            nav.className = "pptx-nav";
+            nav.innerHTML = `<span class="pptx-nav-info">共 ${slides.length} 张幻灯片</span>`;
+            content.appendChild(nav);
+            
+            const container = document.createElement("div");
+            container.className = "pptx-container";
+            
+            slides.forEach((slide, index) => {
+                const slideEl = document.createElement("div");
+                slideEl.className = "pptx-slide";
+                slideEl.id = `slide-${index + 1}`;
+                
+                const header = document.createElement("div");
+                header.className = "pptx-slide-header";
+                header.textContent = `幻灯片 ${index + 1}`;
+                slideEl.appendChild(header);
+                
+                const contentDiv = document.createElement("div");
+                contentDiv.className = "pptx-slide-content";
+                
+                // 添加文本
+                slide.texts.forEach(text => {
+                    const p = document.createElement("p");
+                    p.className = "pptx-slide-text";
+                    p.textContent = text;
+                    contentDiv.appendChild(p);
+                });
+                
+                // 添加图片
+                if (slide.images.length > 0) {
+                    const imagesDiv = document.createElement("div");
+                    imagesDiv.className = "pptx-slide-images";
+                    slide.images.forEach(src => {
+                        const img = document.createElement("img");
+                        img.src = src;
+                        img.alt = "幻灯片图片";
+                        imagesDiv.appendChild(img);
+                    });
+                    contentDiv.appendChild(imagesDiv);
+                }
+                
+                // 如果没有内容，显示空白提示
+                if (slide.texts.length === 0 && slide.images.length === 0) {
+                    const empty = document.createElement("p");
+                    empty.style.cssText = "color: #999; font-style: italic; text-align: center;";
+                    empty.textContent = "(空白幻灯片)";
+                    contentDiv.appendChild(empty);
+                }
+                
+                slideEl.appendChild(contentDiv);
+                container.appendChild(slideEl);
+            });
+            
+            content.appendChild(container);
+            
+        } catch (e) {
+            console.error("[DocumentViewer] PPTX preview error:", e);
+            content.innerHTML = `<div style='text-align:center;padding:40px'>
+                <p style='color:var(--b3-theme-error);margin-bottom:16px'>PPT 预览失败: ${e.message}</p>
+                <a href='${localUrl}' download class='b3-button b3-button--outline' style='text-decoration:none'>下载文件</a>
+            </div>`;
+        }
+    }
+
+    private async renderExcelFile(localUrl: string, content: HTMLElement) {
+        try {
+            const response = await fetch(localUrl);
+            if (!response.ok) throw new Error("HTTP " + response.status);
+            const arrayBuffer = await response.arrayBuffer();
+            
+            // 使用 xlsx 库解析 Excel 文件
+            const workbook = XLSX.read(arrayBuffer, { type: "array" });
+            
+            if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
+                throw new Error("无法解析 Excel 文件：未找到工作表");
+            }
+            
+            content.innerHTML = "";
+            
+            // 添加样式
+            const style = document.createElement("style");
+            style.textContent = `
+                .xlsx-container { max-width: 100%; margin: 0 auto; }
+                .xlsx-tabs {
+                    display: flex;
+                    gap: 4px;
+                    padding: 8px 0;
+                    border-bottom: 1px solid var(--b3-border-color);
+                    margin-bottom: 16px;
+                    flex-wrap: wrap;
+                }
+                .xlsx-tab {
+                    padding: 6px 16px;
+                    background: var(--b3-theme-surface);
+                    border: 1px solid var(--b3-border-color);
+                    border-radius: 4px;
+                    cursor: pointer;
+                    font-size: 13px;
+                    color: var(--b3-theme-on-surface);
+                    transition: all 0.2s;
+                }
+                .xlsx-tab:hover {
+                    background: var(--b3-theme-surface-lighter);
+                }
+                .xlsx-tab.active {
+                    background: var(--b3-theme-primary);
+                    color: var(--b3-theme-on-primary);
+                    border-color: var(--b3-theme-primary);
+                }
+                .xlsx-sheet {
+                    display: none;
+                    overflow: auto;
+                }
+                .xlsx-sheet.active {
+                    display: block;
+                }
+                .xlsx-table {
+                    border-collapse: collapse;
+                    width: 100%;
+                    font-size: 13px;
+                    background: white;
+                }
+                .xlsx-table th, .xlsx-table td {
+                    border: 1px solid #ddd;
+                    padding: 8px 12px;
+                    text-align: left;
+                    white-space: nowrap;
+                    max-width: 300px;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                }
+                .xlsx-table th {
+                    background: #f5f5f5;
+                    font-weight: 600;
+                    position: sticky;
+                    top: 0;
+                    z-index: 1;
+                }
+                .xlsx-table tr:nth-child(even) {
+                    background: #fafafa;
+                }
+                .xlsx-table tr:hover {
+                    background: #f0f7ff;
+                }
+                .xlsx-row-num {
+                    background: #f5f5f5 !important;
+                    color: #666;
+                    font-weight: 500;
+                    text-align: center !important;
+                    min-width: 40px;
+                }
+                .xlsx-info {
+                    color: var(--b3-theme-on-surface-light);
+                    font-size: 12px;
+                    margin-top: 8px;
+                }
+            `;
+            content.appendChild(style);
+            
+            // 创建标签页
+            const tabsContainer = document.createElement("div");
+            tabsContainer.className = "xlsx-tabs";
+            
+            const sheetsContainer = document.createElement("div");
+            sheetsContainer.className = "xlsx-container";
+            
+            workbook.SheetNames.forEach((sheetName, index) => {
+                // 创建标签
+                const tab = document.createElement("button");
+                tab.className = "xlsx-tab" + (index === 0 ? " active" : "");
+                tab.textContent = sheetName;
+                tab.onclick = () => {
+                    // 切换标签
+                    tabsContainer.querySelectorAll(".xlsx-tab").forEach(t => t.classList.remove("active"));
+                    tab.classList.add("active");
+                    sheetsContainer.querySelectorAll(".xlsx-sheet").forEach(s => s.classList.remove("active"));
+                    sheetsContainer.querySelector(`#sheet-${index}`)?.classList.add("active");
+                };
+                tabsContainer.appendChild(tab);
+                
+                // 创建工作表内容
+                const sheetDiv = document.createElement("div");
+                sheetDiv.className = "xlsx-sheet" + (index === 0 ? " active" : "");
+                sheetDiv.id = `sheet-${index}`;
+                
+                const sheet = workbook.Sheets[sheetName];
+                const range = XLSX.utils.decode_range(sheet["!ref"] || "A1");
+                const rowCount = range.e.r - range.s.r + 1;
+                const colCount = range.e.c - range.s.c + 1;
+                
+                // 限制显示的行数和列数，避免性能问题
+                const maxRows = Math.min(rowCount, 1000);
+                const maxCols = Math.min(colCount, 50);
+                
+                const table = document.createElement("table");
+                table.className = "xlsx-table";
+                
+                // 创建表头（列字母）
+                const thead = document.createElement("thead");
+                const headerRow = document.createElement("tr");
+                
+                // 行号列
+                const cornerTh = document.createElement("th");
+                cornerTh.className = "xlsx-row-num";
+                cornerTh.textContent = "";
+                headerRow.appendChild(cornerTh);
+                
+                // 列字母
+                for (let c = 0; c < maxCols; c++) {
+                    const th = document.createElement("th");
+                    th.textContent = XLSX.utils.encode_col(range.s.c + c);
+                    headerRow.appendChild(th);
+                }
+                thead.appendChild(headerRow);
+                table.appendChild(thead);
+                
+                // 创建表体
+                const tbody = document.createElement("tbody");
+                for (let r = 0; r < maxRows; r++) {
+                    const tr = document.createElement("tr");
+                    
+                    // 行号
+                    const rowNumTd = document.createElement("td");
+                    rowNumTd.className = "xlsx-row-num";
+                    rowNumTd.textContent = String(range.s.r + r + 1);
+                    tr.appendChild(rowNumTd);
+                    
+                    // 单元格数据
+                    for (let c = 0; c < maxCols; c++) {
+                        const td = document.createElement("td");
+                        const cellAddress = XLSX.utils.encode_cell({ r: range.s.r + r, c: range.s.c + c });
+                        const cell = sheet[cellAddress];
+                        if (cell) {
+                            // 格式化显示值
+                            if (cell.t === "n" && cell.v !== undefined) {
+                                // 数字类型
+                                td.textContent = cell.w || String(cell.v);
+                                td.style.textAlign = "right";
+                            } else if (cell.t === "d") {
+                                // 日期类型
+                                td.textContent = cell.w || String(cell.v);
+                            } else {
+                                td.textContent = cell.w || cell.v?.toString() || "";
+                            }
+                            td.title = td.textContent; // 鼠标悬停显示完整内容
+                        }
+                        tr.appendChild(td);
+                    }
+                    tbody.appendChild(tr);
+                }
+                table.appendChild(tbody);
+                sheetDiv.appendChild(table);
+                
+                // 显示信息
+                const info = document.createElement("div");
+                info.className = "xlsx-info";
+                let infoText = `共 ${rowCount} 行 × ${colCount} 列`;
+                if (rowCount > maxRows || colCount > maxCols) {
+                    infoText += ` (显示前 ${maxRows} 行 × ${maxCols} 列)`;
+                }
+                info.textContent = infoText;
+                sheetDiv.appendChild(info);
+                
+                sheetsContainer.appendChild(sheetDiv);
+            });
+            
+            content.appendChild(tabsContainer);
+            content.appendChild(sheetsContainer);
+            
+        } catch (e) {
+            console.error("[DocumentViewer] Excel preview error:", e);
+            content.innerHTML = `<div style='text-align:center;padding:40px'>
+                <p style='color:var(--b3-theme-error);margin-bottom:16px'>Excel 预览失败: ${e.message}</p>
                 <a href='${localUrl}' download class='b3-button b3-button--outline' style='text-decoration:none'>下载文件</a>
             </div>`;
         }

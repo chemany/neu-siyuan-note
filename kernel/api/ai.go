@@ -106,6 +106,82 @@ func chat(c *gin.Context) {
 	}
 }
 
+// chatStream 流式聊天 API，使用 SSE (Server-Sent Events)
+func chatStream(c *gin.Context) {
+	arg, ok := util.JsonArg(c, nil)
+	if !ok {
+		c.JSON(http.StatusBadRequest, map[string]interface{}{
+			"code": -1,
+			"msg":  "invalid request",
+		})
+		return
+	}
+
+	messagesArg, ok := arg["messages"].([]interface{})
+	if !ok {
+		c.JSON(http.StatusBadRequest, map[string]interface{}{
+			"code": -1,
+			"msg":  "messages parameter is missing or invalid",
+		})
+		return
+	}
+
+	var messages []openai.ChatCompletionMessage
+	for _, msg := range messagesArg {
+		msgMap, ok := msg.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		role, _ := msgMap["role"].(string)
+		content, _ := msgMap["content"].(string)
+
+		messages = append(messages, openai.ChatCompletionMessage{
+			Role:    role,
+			Content: content,
+		})
+	}
+
+	// 设置 SSE 响应头
+	c.Header("Content-Type", "text/event-stream")
+	c.Header("Cache-Control", "no-cache")
+	c.Header("Connection", "keep-alive")
+	c.Header("Access-Control-Allow-Origin", "*")
+
+	// 流式输出
+	err := model.ChatStream(messages, func(token string) error {
+		// SSE 格式: data: {json}\n\n
+		data := map[string]interface{}{
+			"token": token,
+			"done":  false,
+		}
+		jsonData, _ := json.Marshal(data)
+		_, writeErr := c.Writer.Write([]byte(fmt.Sprintf("data: %s\n\n", jsonData)))
+		if writeErr != nil {
+			return writeErr
+		}
+		c.Writer.Flush()
+		return nil
+	})
+
+	// 发送完成信号
+	if err != nil {
+		data := map[string]interface{}{
+			"error": err.Error(),
+			"done":  true,
+		}
+		jsonData, _ := json.Marshal(data)
+		c.Writer.Write([]byte(fmt.Sprintf("data: %s\n\n", jsonData)))
+	} else {
+		data := map[string]interface{}{
+			"done": true,
+		}
+		jsonData, _ := json.Marshal(data)
+		c.Writer.Write([]byte(fmt.Sprintf("data: %s\n\n", jsonData)))
+	}
+	c.Writer.Flush()
+}
+
 // 新增向量化和AI文档分析API
 
 func vectorizeBlock(c *gin.Context) {
@@ -256,7 +332,7 @@ func getEmbeddingConfig(c *gin.Context) {
 		ret.Data = map[string]interface{}{
 			"provider":       "siliconflow",
 			"model":          "BAAI/bge-large-zh-v1.5",
-			"apiBaseUrl":     "https://api.siliconflow.cn/v1/embeddings",
+			"apiBaseUrl":     "https://api.siliconflow.cn/v1",
 			"encodingFormat": "float",
 			"timeout":        30,
 			"enabled":        false,
@@ -460,5 +536,66 @@ func batchParseAttachments(c *gin.Context) {
 
 	ret.Data = map[string]interface{}{
 		"results": results,
+	}
+}
+
+// vectorizeAsset 向量化单个资源文件
+func vectorizeAsset(c *gin.Context) {
+	ret := gulu.Ret.NewResult()
+	defer c.JSON(http.StatusOK, ret)
+
+	arg, ok := util.JsonArg(c, ret)
+	if !ok {
+		return
+	}
+
+	assetPath, ok := arg["assetPath"].(string)
+	if !ok || assetPath == "" {
+		ret.Code = -1
+		ret.Msg = "资源文件路径不能为空"
+		return
+	}
+
+	// 如果是相对路径，转换为绝对路径
+	if !filepath.IsAbs(assetPath) {
+		assetPath = filepath.Join(util.DataDir, assetPath)
+	}
+
+	// 执行向量化（向量文件存储在资源文件同目录）
+	assetVector, err := model.VectorizeAsset(assetPath)
+	if err != nil {
+		ret.Code = -1
+		ret.Msg = fmt.Sprintf("向量化资源文件失败: %v", err)
+		return
+	}
+
+	ret.Data = map[string]interface{}{
+		"success":    true,
+		"id":         assetVector.ID,
+		"assetPath":  assetVector.AssetPath,
+		"fileName":   assetVector.FileName,
+		"fileType":   assetVector.FileType,
+		"vectorDim":  len(assetVector.Vector),
+		"vectorFile": assetPath + ".vectors.json",
+		"updatedAt":  assetVector.UpdatedAt,
+		"message":    fmt.Sprintf("成功向量化资源文件: %s", assetVector.FileName),
+	}
+}
+
+// getVectorizedAssets 获取已向量化的资源文件列表
+func getVectorizedAssets(c *gin.Context) {
+	ret := gulu.Ret.NewResult()
+	defer c.JSON(http.StatusOK, ret)
+
+	assets, err := model.GetVectorizedAssets(util.DataDir)
+	if err != nil {
+		ret.Code = -1
+		ret.Msg = fmt.Sprintf("获取向量化资源列表失败: %v", err)
+		return
+	}
+
+	ret.Data = map[string]interface{}{
+		"assets": assets,
+		"count":  len(assets),
 	}
 }

@@ -194,6 +194,38 @@ func (s *FileUserStore) createUserWorkspace(user *User) error {
 		return fmt.Errorf("failed to create workspace directory: %w", err)
 	}
 
+	// 创建必要的子目录
+	subDirs := []string{
+		"assets",
+		"conf/appearance/emojis",
+		"conf/appearance/themes",
+		"conf/appearance/icons",
+		"emojis",
+		"history",
+		"plugins",
+		"public",
+		"repo",
+		"storage",
+		"temp",
+		"templates",
+		"widgets",
+	}
+	for _, subDir := range subDirs {
+		if err := os.MkdirAll(filepath.Join(workspaceDir, subDir), 0755); err != nil {
+			logging.LogWarnf("Failed to create subdirectory %s: %v", subDir, err)
+		}
+	}
+
+	// 初始化 emojis 配置文件
+	emojisConfPath := filepath.Join(workspaceDir, "conf", "appearance", "emojis", "conf.json")
+	if _, err := os.Stat(emojisConfPath); os.IsNotExist(err) {
+		// 创建默认的空 emojis 配置
+		defaultEmojisConf := []byte("[]")
+		if writeErr := os.WriteFile(emojisConfPath, defaultEmojisConf, 0644); writeErr != nil {
+			logging.LogWarnf("Failed to create emojis conf.json: %v", writeErr)
+		}
+	}
+
 	user.Workspace = workspaceDir
 	logging.LogInfof("Created workspace for user %s at %s", user.Username, workspaceDir)
 	return nil

@@ -107,69 +107,112 @@ ${genSVGBG()}
             }
 
             if (webUserData) {
-                return `<div class="fn__flex config-account">
-<div class="config-account__center">
-    <div class="config-account__bg">
-        <div class="config-account__cover" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);"></div>
-        <div class="config-account__avatar" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); display: flex; align-items: center; justify-content: center; color: white; font-size: 48px; font-weight: bold;">
-            ${webUserData.username ? webUserData.username.charAt(0).toUpperCase() : 'U'}
+                // 生成用户头像的渐变色（基于用户名生成一致的颜色）
+                const getAvatarGradient = (name: string) => {
+                    const gradients = [
+                        'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                        'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
+                        'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)',
+                        'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)',
+                        'linear-gradient(135deg, #fa709a 0%, #fee140 100%)',
+                        'linear-gradient(135deg, #a8edea 0%, #fed6e3 100%)',
+                        'linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%)',
+                        'linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%)'
+                    ];
+                    const hash = name ? name.charCodeAt(0) % gradients.length : 0;
+                    return gradients[hash];
+                };
+                const avatarGradient = getAvatarGradient(webUserData.username || '');
+                const avatarLetter = webUserData.username ? webUserData.username.charAt(0).toUpperCase() : 'U';
+                
+                return `<div class="fn__flex config-account" style="height: 100%; background: var(--b3-theme-background);">
+    <!-- 左侧：用户资料卡片 -->
+    <div class="config-account__center" style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; padding: 40px 24px; overflow: auto;">
+        <!-- 头像区域 -->
+        <div style="position: relative; margin-bottom: 24px;">
+            <div style="width: 120px; height: 120px; border-radius: 50%; background: ${avatarGradient}; display: flex; align-items: center; justify-content: center; box-shadow: 0 8px 32px rgba(102, 126, 234, 0.3); border: 4px solid var(--b3-theme-surface);">
+                <span style="color: white; font-size: 48px; font-weight: 600; text-shadow: 0 2px 4px rgba(0,0,0,0.1);">${avatarLetter}</span>
+            </div>
+            <div style="position: absolute; bottom: 4px; right: 4px; width: 24px; height: 24px; background: #22c55e; border-radius: 50%; border: 3px solid var(--b3-theme-surface);"></div>
         </div>
-        <h1 class="config-account__name">
-            <span class="fn__a">${webUserData.username || 'Unknown'}</span>
-            <span class="ft__on-surface ft__smaller">统一注册服务</span>
-        </h1>
-    </div>
-    <div class="config-account__info">
-        <div class="fn__flex">
-            <button class="b3-button b3-button--text" id="refreshWebProfile">刷新信息</button>
-            <span class="fn__space"></span>
-            <button class="b3-button b3-button--cancel" id="logoutWeb">
+        
+        <!-- 用户名 -->
+        <h2 style="margin: 0 0 8px 0; font-size: 24px; font-weight: 600; color: var(--b3-theme-on-background);">${webUserData.username || 'Unknown'}</h2>
+        <span style="display: inline-flex; align-items: center; padding: 4px 12px; background: var(--b3-theme-primary-lightest); color: var(--b3-theme-primary); border-radius: 20px; font-size: 12px; font-weight: 500;">
+            <svg style="width: 14px; height: 14px; margin-right: 4px;"><use xlink:href="#iconAccount"></use></svg>
+            统一注册服务
+        </span>
+        
+        <!-- 操作按钮 -->
+        <div style="display: flex; gap: 12px; margin-top: 24px;">
+            <button class="b3-button b3-button--outline" id="refreshWebProfile" style="display: flex; align-items: center; gap: 6px; padding: 8px 20px; border-radius: 8px;">
+                <svg style="width: 16px; height: 16px;"><use xlink:href="#iconRefresh"></use></svg>
+                刷新
+            </button>
+            <button class="b3-button b3-button--cancel" id="logoutWeb" style="display: flex; align-items: center; gap: 6px; padding: 8px 20px; border-radius: 8px;">
+                <svg style="width: 16px; height: 16px;"><use xlink:href="#iconClose"></use></svg>
                 ${window.siyuan.languages.logout}
             </button>
-            <span class="fn__flex-1"></span>
         </div>
-        <div class="fn__hr--b"></div>
-        <div class="b3-label">
-            <div class="b3-label__text">用户名</div>
-            <div class="fn__hr"></div>
-            <div class="ft__on-surface">${webUserData.username || 'N/A'}</div>
-        </div>
-        <div class="fn__hr--b"></div>
-        <div class="b3-label">
-            <div class="b3-label__text">邮箱</div>
-            <div class="fn__hr"></div>
-            <div class="ft__on-surface">${webUserData.email || 'N/A'}</div>
-        </div>
-        <div class="fn__hr--b"></div>
-        <div class="b3-label">
-            <div class="b3-label__text">工作空间</div>
-            <div class="fn__hr"></div>
-            <div class="ft__on-surface" style="font-family: monospace; font-size: 12px; word-break: break-all;">${webUserData.workspace || 'N/A'}</div>
-        </div>
-        <div class="fn__hr--b"></div>
-        <div class="b3-label">
-            <div class="b3-label__text">认证方式</div>
-            <div class="fn__hr"></div>
-            <div><span class="b3-chip b3-chip--primary">统一注册服务</span></div>
-        </div>
-    </div>
-</div>
-<div class="config-account__center config-account__center--text">
-    <div class="fn__flex-1 fn__hr--b"></div>
-    ${genSVGBG()}
-    <div class="fn__flex-1 fn__hr--b"></div>
-    <div class="b3-label">
-        <div class="b3-label__text">关于统一注册服务</div>
-        <div class="fn__hr"></div>
-        <div class="ft__on-surface ft__smaller" style="line-height: 1.6;">
-            您的账户由<strong>统一注册服务</strong>管理，可以在多个应用（思源笔记、智能日历等）之间共享。
-            退出登录后，您可以切换到其他账户登录。
+        
+        <!-- 信息卡片 -->
+        <div style="width: 100%; max-width: 400px; margin-top: 32px; background: var(--b3-theme-surface); border-radius: 16px; padding: 24px; box-shadow: 0 2px 12px rgba(0,0,0,0.04);">
+            <!-- 用户名 -->
+            <div style="display: flex; align-items: center; padding: 16px 0; border-bottom: 1px solid var(--b3-border-color);">
+                <div style="width: 40px; height: 40px; border-radius: 10px; background: var(--b3-theme-primary-lightest); display: flex; align-items: center; justify-content: center; margin-right: 16px;">
+                    <svg style="width: 20px; height: 20px; color: var(--b3-theme-primary);"><use xlink:href="#iconAccount"></use></svg>
+                </div>
+                <div style="flex: 1;">
+                    <div style="font-size: 12px; color: var(--b3-theme-on-surface-light); margin-bottom: 4px;">用户名</div>
+                    <div style="font-size: 15px; color: var(--b3-theme-on-background); font-weight: 500;">${webUserData.username || 'N/A'}</div>
+                </div>
+            </div>
+            
+            <!-- 邮箱 -->
+            <div style="display: flex; align-items: center; padding: 16px 0;">
+                <div style="width: 40px; height: 40px; border-radius: 10px; background: rgba(34, 197, 94, 0.1); display: flex; align-items: center; justify-content: center; margin-right: 16px;">
+                    <svg style="width: 20px; height: 20px; color: #22c55e;"><use xlink:href="#iconEmail"></use></svg>
+                </div>
+                <div style="flex: 1;">
+                    <div style="font-size: 12px; color: var(--b3-theme-on-surface-light); margin-bottom: 4px;">邮箱地址</div>
+                    <div style="font-size: 15px; color: var(--b3-theme-on-background); font-weight: 500;">${webUserData.email || 'N/A'}</div>
+                </div>
+            </div>
         </div>
     </div>
-    <div class="fn__flex-1 fn__hr--b"></div>
-    ${genSVGBG()}
-    <div class="fn__flex-1 fn__hr--b"></div>
-</div>
+    
+    <!-- 右侧：说明区域 -->
+    <div class="config-account__center config-account__center--text" style="flex: 1; display: flex; flex-direction: column; justify-content: center; padding: 40px; background: var(--b3-theme-surface); overflow: auto;">
+        <div style="max-width: 360px; margin: 0 auto;">
+            ${genSVGBG()}
+            <div style="margin: 32px 0;">
+                <h3 style="margin: 0 0 16px 0; font-size: 18px; font-weight: 600; color: var(--b3-theme-on-background);">
+                    <svg style="width: 20px; height: 20px; margin-right: 8px; vertical-align: middle;"><use xlink:href="#iconInfo"></use></svg>
+                    关于统一注册服务
+                </h3>
+                <p style="margin: 0; font-size: 14px; line-height: 1.8; color: var(--b3-theme-on-surface);">
+                    您的账户由<strong style="color: var(--b3-theme-primary);">统一注册服务</strong>管理，可以在多个应用之间共享登录状态。
+                </p>
+                <div style="margin-top: 20px; padding: 16px; background: var(--b3-theme-background); border-radius: 12px; border-left: 4px solid var(--b3-theme-primary);">
+                    <div style="font-size: 13px; color: var(--b3-theme-on-surface-light);">
+                        <div style="display: flex; align-items: center; margin-bottom: 8px;">
+                            <svg style="width: 16px; height: 16px; margin-right: 8px; color: var(--b3-theme-primary);"><use xlink:href="#iconMark"></use></svg>
+                            思源笔记
+                        </div>
+                        <div style="display: flex; align-items: center; margin-bottom: 8px;">
+                            <svg style="width: 16px; height: 16px; margin-right: 8px; color: var(--b3-theme-primary);"><use xlink:href="#iconMark"></use></svg>
+                            智能日历
+                        </div>
+                        <div style="display: flex; align-items: center;">
+                            <svg style="width: 16px; height: 16px; margin-right: 8px; color: var(--b3-theme-primary);"><use xlink:href="#iconMark"></use></svg>
+                            更多应用...
+                        </div>
+                    </div>
+                </div>
+            </div>
+            ${genSVGBG()}
+        </div>
+    </div>
 </div>`;
             }
         }
@@ -281,35 +324,65 @@ ${renewHTML}<div class="fn__hr--b"></div>`;
         }
 
         // 未登录状态 - 显示提示信息而不是登录表单
-        return `<div class="fn__flex config-account">
-<div class="config-account__center">
-    <div class="config-account__bg" style="padding: 60px 40px; text-align: center;">
-        <div style="font-size: 48px; margin-bottom: 20px;">🔐</div>
-        <h2 style="color: #333; margin-bottom: 16px;">请先登录</h2>
-        <p style="color: #666; line-height: 1.6; margin-bottom: 24px;">
-            您需要使用统一注册服务账户登录后才能查看账户信息。
-        </p>
-        <button class="b3-button b3-button--outline" onclick="window.location.href='/stage/login.html'" style="padding: 12px 32px;">
-            前往登录
-        </button>
-    </div>
-</div>
-<div class="config-account__center config-account__center--text">
-    <div class="fn__flex-1 fn__hr--b"></div>
-    ${genSVGBG()}
-    <div class="fn__flex-1 fn__hr--b"></div>
-    <div class="b3-label">
-        <div class="b3-label__text">关于统一注册服务</div>
-        <div class="fn__hr"></div>
-        <div class="ft__on-surface ft__smaller" style="line-height: 1.6;">
-            思源笔记现在使用<strong>统一注册服务</strong>进行账户管理。<br>
-            您可以使用同一个账户登录多个应用（思源笔记、智能日历等）。
+        return `<div class="fn__flex config-account" style="height: 100%; background: var(--b3-theme-background);">
+    <!-- 左侧：登录提示 -->
+    <div class="config-account__center" style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px 24px;">
+        <div style="text-align: center; max-width: 360px;">
+            <!-- 图标 -->
+            <div style="width: 100px; height: 100px; margin: 0 auto 24px; border-radius: 50%; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); display: flex; align-items: center; justify-content: center; box-shadow: 0 8px 32px rgba(102, 126, 234, 0.3);">
+                <svg style="width: 48px; height: 48px; color: white;"><use xlink:href="#iconAccount"></use></svg>
+            </div>
+            
+            <!-- 标题 -->
+            <h2 style="margin: 0 0 12px 0; font-size: 24px; font-weight: 600; color: var(--b3-theme-on-background);">欢迎使用思源笔记</h2>
+            <p style="margin: 0 0 32px 0; font-size: 15px; line-height: 1.6; color: var(--b3-theme-on-surface);">
+                登录您的账户以同步数据和访问更多功能
+            </p>
+            
+            <!-- 登录按钮 -->
+            <button class="b3-button b3-button--big" onclick="window.location.href='/stage/login.html'" style="width: 100%; padding: 14px 32px; border-radius: 12px; font-size: 16px; font-weight: 500; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border: none; box-shadow: 0 4px 16px rgba(102, 126, 234, 0.4);">
+                <svg style="width: 18px; height: 18px; margin-right: 8px;"><use xlink:href="#iconAccount"></use></svg>
+                立即登录
+            </button>
+            
+            <p style="margin: 16px 0 0 0; font-size: 13px; color: var(--b3-theme-on-surface-light);">
+                还没有账户？<a href="/stage/register.html" style="color: var(--b3-theme-primary); text-decoration: none; font-weight: 500;">立即注册</a>
+            </p>
         </div>
     </div>
-    <div class="fn__flex-1 fn__hr--b"></div>
-    ${genSVGBG()}
-    <div class="fn__flex-1 fn__hr--b"></div>
-</div>
+    
+    <!-- 右侧：说明区域 -->
+    <div class="config-account__center config-account__center--text" style="flex: 1; display: flex; flex-direction: column; justify-content: center; padding: 40px; background: var(--b3-theme-surface); overflow: auto;">
+        <div style="max-width: 360px; margin: 0 auto;">
+            ${genSVGBG()}
+            <div style="margin: 32px 0;">
+                <h3 style="margin: 0 0 16px 0; font-size: 18px; font-weight: 600; color: var(--b3-theme-on-background);">
+                    <svg style="width: 20px; height: 20px; margin-right: 8px; vertical-align: middle;"><use xlink:href="#iconInfo"></use></svg>
+                    关于统一注册服务
+                </h3>
+                <p style="margin: 0; font-size: 14px; line-height: 1.8; color: var(--b3-theme-on-surface);">
+                    思源笔记使用<strong style="color: var(--b3-theme-primary);">统一注册服务</strong>进行账户管理，一个账户即可登录多个应用。
+                </p>
+                <div style="margin-top: 20px; padding: 16px; background: var(--b3-theme-background); border-radius: 12px; border-left: 4px solid var(--b3-theme-primary);">
+                    <div style="font-size: 13px; color: var(--b3-theme-on-surface-light);">
+                        <div style="display: flex; align-items: center; margin-bottom: 8px;">
+                            <svg style="width: 16px; height: 16px; margin-right: 8px; color: var(--b3-theme-primary);"><use xlink:href="#iconMark"></use></svg>
+                            思源笔记
+                        </div>
+                        <div style="display: flex; align-items: center; margin-bottom: 8px;">
+                            <svg style="width: 16px; height: 16px; margin-right: 8px; color: var(--b3-theme-primary);"><use xlink:href="#iconMark"></use></svg>
+                            智能日历
+                        </div>
+                        <div style="display: flex; align-items: center;">
+                            <svg style="width: 16px; height: 16px; margin-right: 8px; color: var(--b3-theme-primary);"><use xlink:href="#iconMark"></use></svg>
+                            更多应用...
+                        </div>
+                    </div>
+                </div>
+            </div>
+            ${genSVGBG()}
+        </div>
+    </div>
 </div>`;
     },
     bindEvent: (element: Element) => {
@@ -368,14 +441,29 @@ ${renewHTML}<div class="fn__hr--b"></div>`;
         if (trialSubElement) {
             trialSubElement.addEventListener("click", () => {
                 fetchPost("/api/account/startFreeTrial", {}, () => {
-                    element.querySelector("#refresh").dispatchEvent(new Event("click"));
+                    const refreshBtn = element.querySelector("#refresh");
+                    if (refreshBtn) {
+                        refreshBtn.dispatchEvent(new Event("click"));
+                    }
                 });
             });
         }
         const agreeLoginElement = element.querySelector("#agreeLogin") as HTMLInputElement;
         const userNameElement = element.querySelector("#userName") as HTMLInputElement;
+        
+        // 如果是Web用户登录状态，不需要绑定思源云用户的事件
+        const webToken = localStorage.getItem('siyuan_token') || getCookie('siyuan_token');
+        if (webToken && element.querySelector("#logoutWeb")) {
+            // Web用户的事件已经在上面绑定了，直接返回
+            return;
+        }
+        
         if (!userNameElement) {
             const refreshElement = element.querySelector("#refresh");
+            if (!refreshElement) {
+                // 未登录状态，没有refresh按钮，直接返回
+                return;
+            }
             refreshElement.addEventListener("click", () => {
                 const svgElement = refreshElement.firstElementChild;
                 if (svgElement.classList.contains("fn__rotate")) {
@@ -393,28 +481,34 @@ ${renewHTML}<div class="fn__hr--b"></div>`;
                     processSync();
                 });
             });
-            element.querySelector("#logout").addEventListener("click", () => {
-                fetchPost("/api/setting/logoutCloudUser", {}, () => {
-                    fetchPost("/api/setting/getCloudUser", {}, response => {
-                        window.siyuan.user = response.data;
-                        element.innerHTML = account.genHTML();
-                        account.bindEvent(element);
-                        account.onSetaccount();
-                        processSync();
+            const logoutElement = element.querySelector("#logout");
+            if (logoutElement) {
+                logoutElement.addEventListener("click", () => {
+                    fetchPost("/api/setting/logoutCloudUser", {}, () => {
+                        fetchPost("/api/setting/getCloudUser", {}, response => {
+                            window.siyuan.user = response.data;
+                            element.innerHTML = account.genHTML();
+                            account.bindEvent(element);
+                            account.onSetaccount();
+                            processSync();
+                        });
                     });
                 });
-            });
-            element.querySelector("#deactivateUser").addEventListener(getEventName(), () => {
-                confirmDialog("⚠️ " + window.siyuan.languages.deactivateUser, window.siyuan.languages.deactivateUserTip, () => {
-                    fetchPost("/api/account/deactivate", {}, () => {
-                        window.siyuan.user = null;
-                        element.innerHTML = account.genHTML();
-                        account.bindEvent(element);
-                        account.onSetaccount();
-                        processSync();
+            }
+            const deactivateElement = element.querySelector("#deactivateUser");
+            if (deactivateElement) {
+                deactivateElement.addEventListener(getEventName(), () => {
+                    confirmDialog("⚠️ " + window.siyuan.languages.deactivateUser, window.siyuan.languages.deactivateUserTip, () => {
+                        fetchPost("/api/account/deactivate", {}, () => {
+                            window.siyuan.user = null;
+                            element.innerHTML = account.genHTML();
+                            account.bindEvent(element);
+                            account.onSetaccount();
+                            processSync();
+                        });
                     });
                 });
-            });
+            }
             element.querySelectorAll("input[type='checkbox']").forEach(item => {
                 item.addEventListener("change", () => {
                     fetchPost("/api/setting/setAccount", {
