@@ -159,7 +159,7 @@ func NewAI() *AI {
 	embedding := &Embedding{
 		Provider:       "siliconflow", // Default to SiliconFlow as per LingShu notes
 		Model:          "BAAI/bge-large-zh-v1.5", // Default Chinese embedding model
-		APIBaseURL:     "https://api.siliconflow.cn/v1/embeddings",
+		APIBaseURL:     "https://api.siliconflow.cn/v1", // 基础 URL，OpenAI 客户端会自动添加 /embeddings 端点
 		EncodingFormat: "float",
 		Timeout:        30,
 		Enabled:        false, // Disabled by default until API key is configured

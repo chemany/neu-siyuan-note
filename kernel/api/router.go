@@ -17,9 +17,27 @@
 package api
 
 import (
+	"net/http"
+	"strings"
+
+	"github.com/88250/gulu"
 	"github.com/gin-gonic/gin"
 	"github.com/siyuan-note/siyuan/kernel/model"
 )
+
+// checkLocalAccess 检查是否为本地访问（仅允许 127.0.0.1 或 localhost）
+func checkLocalAccess(c *gin.Context) {
+	clientIP := c.ClientIP()
+	if clientIP != "127.0.0.1" && clientIP != "::1" && !strings.HasPrefix(clientIP, "localhost") {
+		ret := gulu.Ret.NewResult()
+		ret.Code = -1
+		ret.Msg = "此 API 仅允许本地访问"
+		c.JSON(http.StatusForbidden, ret)
+		c.Abort()
+		return
+	}
+	c.Next()
+}
 
 func ServeAPI(ginServer *gin.Engine) {
 	// 不需要鉴权
@@ -300,6 +318,8 @@ func ServeAPI(ginServer *gin.Engine) {
 	ginServer.Handle("POST", "/api/asset/getMissingAssets", model.CheckWebAuth, getMissingAssets)
 	ginServer.Handle("POST", "/api/asset/removeUnusedAsset", model.CheckWebAuth, model.CheckAdminRole, model.CheckReadonly, removeUnusedAsset)
 	ginServer.Handle("POST", "/api/asset/removeUnusedAssets", model.CheckWebAuth, model.CheckAdminRole, model.CheckReadonly, removeUnusedAssets)
+	// 内部系统清理API（仅允许本地访问，用于定时任务）
+	ginServer.Handle("POST", "/api/system/cleanupUnusedAssets", checkLocalAccess, removeUnusedAssets)
 	ginServer.Handle("POST", "/api/asset/getDocImageAssets", model.CheckWebAuth, getDocImageAssets)
 	ginServer.Handle("POST", "/api/asset/getDocAssets", model.CheckWebAuth, getDocAssets)
 	ginServer.Handle("POST", "/api/asset/renameAsset", model.CheckWebAuth, model.CheckAdminRole, model.CheckReadonly, renameAsset)
@@ -488,6 +508,7 @@ func ServeAPI(ginServer *gin.Engine) {
 	ginServer.Handle("POST", "/api/ai/chatGPT", model.CheckWebAuth, model.CheckAdminRole, chatGPT)
 	ginServer.Handle("POST", "/api/ai/chatGPTWithAction", model.CheckWebAuth, model.CheckAdminRole, chatGPTWithAction)
 	ginServer.Handle("POST", "/api/ai/chat", model.CheckWebAuth, model.CheckAdminRole, chat)
+	ginServer.Handle("POST", "/api/ai/chatStream", model.CheckWebAuth, model.CheckAdminRole, chatStream)
 
 	// 新增向量化和AI文档分析API
 	ginServer.Handle("POST", "/api/ai/vectorizeBlock", model.CheckWebAuth, vectorizeBlock)
@@ -505,6 +526,10 @@ func ServeAPI(ginServer *gin.Engine) {
 	// 附件解析API（PDF等）
 	ginServer.Handle("POST", "/api/ai/parseAttachment", model.CheckWebAuth, parseAttachment)
 	ginServer.Handle("POST", "/api/ai/batchParseAttachments", model.CheckWebAuth, batchParseAttachments)
+
+	// 资源文件向量化API
+	ginServer.Handle("POST", "/api/ai/vectorizeAsset", model.CheckWebAuth, model.CheckAdminRole, vectorizeAsset)
+	ginServer.Handle("POST", "/api/ai/getVectorizedAssets", model.CheckWebAuth, getVectorizedAssets)
 
 	ginServer.Handle("POST", "/api/petal/loadPetals", model.CheckWebAuth, loadPetals)
 	ginServer.Handle("POST", "/api/petal/setPetalEnabled", model.CheckWebAuth, model.CheckAdminRole, model.CheckReadonly, setPetalEnabled)

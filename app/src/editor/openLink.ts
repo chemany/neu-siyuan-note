@@ -8,8 +8,9 @@ import {Constants} from "../constants";
 import {showMessage} from "../dialog/message";
 import {openAsset, openBy} from "./util";
 
-// 需要双击才能预览的文档类型（Office 文档、Markdown 等）
+// 需要双击才能预览的文档类型（PDF、Office 文档、Markdown 等）
 const DBLCLICK_PREVIEW_EXTS = [
+    ".pdf",
     ...Constants.SIYUAN_ASSETS_DOCUMENT,
     ".md", ".markdown", ".txt"
 ];

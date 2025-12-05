@@ -19,6 +19,7 @@ package model
 import (
 	"bytes"
 	"context"
+	"crypto/md5"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -38,6 +39,10 @@ import (
 	"github.com/siyuan-note/siyuan/kernel/treenode"
 	"github.com/siyuan-note/siyuan/kernel/util"
 )
+
+func init() {
+	StartAssetVectorizeWorker()
+}
 
 func ChatGPT(msg string) (ret string) {
 	if !isOpenAIAPIEnabled() {
@@ -95,6 +100,31 @@ func chatGPTWithAction(msg string, action string, cloud bool) (ret string) {
 func chatGPTContinueWrite(msg string, contextMsgs []string, cloud bool) (ret string, retContextMsgs []string, err error) {
 	util.PushEndlessProgress("Requesting...")
 	defer util.ClearPushProgress(100)
+
+	// RAG 增强：搜索相关文档
+	embeddingService := NewEmbeddingService()
+	if embeddingService != nil && embeddingService.IsEnabled() {
+		// 搜索最相关的3个文档
+		assets, err := SemanticSearchAssets(util.DataDir, msg, 3)
+		if err == nil && len(assets) > 0 {
+			var contextBuilder strings.Builder
+			contextBuilder.WriteString("以下是相关的文档内容供参考：\n\n")
+			for i, asset := range assets {
+				// 截取内容以避免 Prompt 过长
+				content := asset.Content
+				if len(content) > 2000 {
+					content = content[:2000] + "..."
+				}
+				contextBuilder.WriteString(fmt.Sprintf("【文档%d: %s】\n%s\n\n", i+1, asset.FileName, content))
+			}
+			contextBuilder.WriteString("请基于以上文档内容回答用户的问题：\n")
+			contextBuilder.WriteString(msg)
+
+			// 更新 msg
+			msg = contextBuilder.String()
+			logging.LogInfof("RAG 增强已启用，加载了 %d 个相关文档", len(assets))
+		}
+	}
 
 	if Conf.AI.OpenAI.APIMaxContexts < len(contextMsgs) {
 		contextMsgs = contextMsgs[len(contextMsgs)-Conf.AI.OpenAI.APIMaxContexts:]
@@ -187,6 +217,9 @@ func Chat(messages []openai.ChatCompletionMessage) (ret string, err error) {
 		return "", fmt.Errorf("AI not enabled")
 	}
 
+	// RAG 增强：从用户消息中提取查询，搜索相关文档
+	messages = enhanceMessagesWithRAG(messages)
+
 	apiKey, apiBaseURL, apiModel, maxTokens, temperature := getEffectiveAIConfig()
 
 	client := util.NewOpenAIClient(apiKey, Conf.AI.OpenAI.APIProxy, apiBaseURL, Conf.AI.OpenAI.APIUserAgent, Conf.AI.OpenAI.APIVersion, Conf.AI.OpenAI.APIProvider)
@@ -207,6 +240,109 @@ func Chat(messages []openai.ChatCompletionMessage) (ret string, err error) {
 	}
 
 	return "", fmt.Errorf("no response from AI")
+}
+
+// ChatStream 流式聊天，通过 channel 返回每个 token
+func ChatStream(messages []openai.ChatCompletionMessage, onToken func(token string) error) error {
+	if !isOpenAIAPIEnabled() {
+		return fmt.Errorf("AI not enabled")
+	}
+
+	// RAG 增强
+	messages = enhanceMessagesWithRAG(messages)
+
+	apiKey, apiBaseURL, apiModel, maxTokens, temperature := getEffectiveAIConfig()
+
+	client := util.NewOpenAIClient(apiKey, Conf.AI.OpenAI.APIProxy, apiBaseURL, Conf.AI.OpenAI.APIUserAgent, Conf.AI.OpenAI.APIVersion, Conf.AI.OpenAI.APIProvider)
+
+	req := openai.ChatCompletionRequest{
+		Model:       apiModel,
+		Messages:    messages,
+		MaxTokens:   maxTokens,
+		Temperature: float32(temperature),
+		Stream:      true,
+	}
+
+	stream, err := client.CreateChatCompletionStream(context.Background(), req)
+	if err != nil {
+		return fmt.Errorf("创建流式请求失败: %v", err)
+	}
+	defer stream.Close()
+
+	for {
+		response, err := stream.Recv()
+		if err != nil {
+			if err.Error() == "EOF" {
+				break
+			}
+			return fmt.Errorf("接收流式响应失败: %v", err)
+		}
+
+		if len(response.Choices) > 0 {
+			token := response.Choices[0].Delta.Content
+			if token != "" {
+				if err := onToken(token); err != nil {
+					return err
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
+// enhanceMessagesWithRAG 使用 RAG 增强消息
+func enhanceMessagesWithRAG(messages []openai.ChatCompletionMessage) []openai.ChatCompletionMessage {
+	embeddingService := NewEmbeddingService()
+	if embeddingService == nil || !embeddingService.IsEnabled() {
+		return messages
+	}
+
+	// 从最后一条用户消息中提取查询
+	var userQuery string
+	for i := len(messages) - 1; i >= 0; i-- {
+		if messages[i].Role == "user" {
+			userQuery = messages[i].Content
+			break
+		}
+	}
+
+	if userQuery == "" {
+		return messages
+	}
+
+	// 搜索相关文档
+	assets, err := SemanticSearchAssets(util.DataDir, userQuery, 3)
+	if err != nil || len(assets) == 0 {
+		logging.LogInfof("RAG: 未找到相关文档或搜索失败: %v", err)
+		return messages
+	}
+
+	// 构建 RAG 上下文
+	var ragContext strings.Builder
+	ragContext.WriteString("以下是与用户问题相关的文档内容，请参考这些内容回答：\n\n")
+	for i, asset := range assets {
+		content := asset.Content
+		if len(content) > 1500 {
+			content = content[:1500] + "..."
+		}
+		ragContext.WriteString(fmt.Sprintf("【相关文档%d: %s】\n%s\n\n", i+1, asset.FileName, content))
+	}
+
+	logging.LogInfof("RAG 增强已启用，找到 %d 个相关文档", len(assets))
+
+	// 将 RAG 上下文添加到 system 消息中
+	ragSystemMsg := openai.ChatCompletionMessage{
+		Role:    "system",
+		Content: ragContext.String(),
+	}
+
+	// 在消息列表开头插入 RAG 上下文
+	enhancedMessages := make([]openai.ChatCompletionMessage, 0, len(messages)+1)
+	enhancedMessages = append(enhancedMessages, ragSystemMsg)
+	enhancedMessages = append(enhancedMessages, messages...)
+
+	return enhancedMessages
 }
 
 func isOpenAIAPIEnabled() bool {
@@ -350,8 +486,61 @@ func NewOpenAIService() *OpenAIService {
 	}
 }
 
+// GlobalEmbeddingConfig 全局向量化配置
+type GlobalEmbeddingConfig struct {
+	Provider       string `json:"provider"`
+	APIKey         string `json:"apiKey"`
+	Model          string `json:"model"`
+	APIBaseURL     string `json:"apiBaseUrl"`
+	EncodingFormat string `json:"encodingFormat"`
+	Timeout        int    `json:"timeout"`
+	Enabled        bool   `json:"enabled"`
+}
+
+// 全局配置文件路径
+const globalEmbeddingConfigPath = "/home/jason/code/unified-settings-service/config/embedding-config.json"
+
+// loadGlobalEmbeddingConfig 加载全局向量化配置
+func loadGlobalEmbeddingConfig() *GlobalEmbeddingConfig {
+	data, err := os.ReadFile(globalEmbeddingConfigPath)
+	if err != nil {
+		logging.LogWarnf("读取全局向量化配置失败: %v", err)
+		return nil
+	}
+
+	var config GlobalEmbeddingConfig
+	if err := json.Unmarshal(data, &config); err != nil {
+		logging.LogWarnf("解析全局向量化配置失败: %v", err)
+		return nil
+	}
+
+	return &config
+}
+
 // NewEmbeddingService 创建向量化服务
+// 优先使用全局配置，如果全局配置不存在或未启用，则使用用户配置
 func NewEmbeddingService() EmbeddingService {
+	// 优先尝试全局配置
+	globalConfig := loadGlobalEmbeddingConfig()
+	if globalConfig != nil && globalConfig.Enabled && globalConfig.APIKey != "" {
+		logging.LogInfof("使用全局向量化配置: provider=%s, model=%s", globalConfig.Provider, globalConfig.Model)
+		switch globalConfig.Provider {
+		case "siliconflow":
+			return &SiliconFlowEmbeddingService{
+				apiKey:         globalConfig.APIKey,
+				baseURL:        globalConfig.APIBaseURL,
+				model:          globalConfig.Model,
+				encodingFormat: globalConfig.EncodingFormat,
+				timeout:        globalConfig.Timeout,
+			}
+		case "openai":
+			return &OpenAIEmbeddingService{
+				client: util.NewOpenAIClient(globalConfig.APIKey, "", globalConfig.APIBaseURL, "", "", "openai"),
+			}
+		}
+	}
+
+	// 回退到用户配置
 	if Conf.AI.Embedding == nil || !Conf.AI.Embedding.Enabled {
 		return nil
 	}
@@ -500,6 +689,33 @@ func SemanticSearch(query string, notebookID string, limit int) ([]*BlockVector,
 	}
 
 	return blockVectors, nil
+}
+
+// truncateAtSentence 在句子边界截断文本
+func truncateAtSentence(text string, maxChars int) string {
+	if len(text) <= maxChars {
+		return text
+	}
+
+	// 截取到 maxChars
+	truncated := text[:maxChars]
+
+	// 尝试在句子结束符处截断
+	sentenceEnders := []string{"。", "！", "？", ".", "!", "?", "\n"}
+	lastPos := -1
+	for _, ender := range sentenceEnders {
+		if pos := strings.LastIndex(truncated, ender); pos > lastPos {
+			lastPos = pos
+		}
+	}
+
+	// 如果找到句子结束符，在那里截断
+	if lastPos > maxChars/2 {
+		return truncated[:lastPos+1]
+	}
+
+	// 否则直接截断
+	return truncated
 }
 
 // cosineSimilarity 计算余弦相似度
@@ -656,6 +872,91 @@ func VectorizeBlock(blockID string) error {
 	return saveBlockVector(blockVector)
 }
 
+// AssetVector 资源文件向量数据
+type AssetVector struct {
+	ID        string                 `json:"id"`        // 资源文件ID（基于路径生成）
+	AssetPath string                 `json:"assetPath"` // 资源文件路径
+	FileName  string                 `json:"fileName"`  // 文件名
+	FileType  string                 `json:"fileType"`  // 文件类型
+	Content   string                 `json:"content"`   // 解析后的文本内容（用于展示，可截断）
+	Vector    []float64              `json:"vector"`    // 向量数据
+	UpdatedAt time.Time              `json:"updatedAt"` // 更新时间
+	Metadata  map[string]interface{} `json:"metadata"`  // 额外元数据
+}
+
+// VectorizeAsset 向量化单个资源文件
+// assetPath 必须是绝对路径
+func VectorizeAsset(assetPath string) (*AssetVector, error) {
+	embeddingService := NewEmbeddingService()
+	if embeddingService == nil || !embeddingService.IsEnabled() {
+		return nil, fmt.Errorf("向量化服务未启用或未配置")
+	}
+
+	// 解析资源文件内容
+	content, err := ParseAttachment(assetPath)
+	if err != nil {
+		return nil, fmt.Errorf("解析资源文件失败: %v", err)
+	}
+
+	if strings.TrimSpace(content) == "" {
+		return nil, fmt.Errorf("资源文件内容为空")
+	}
+
+	// 限制内容长度用于向量化
+	// 支持 8000 tokens 的模型，中文约 1 字符 = 1-2 tokens
+	// 为安全起见，限制到 7000 字符
+	vectorizeContent := content
+	maxChars := 7000
+	if len(vectorizeContent) > maxChars {
+		// 尝试在句子边界截断
+		vectorizeContent = truncateAtSentence(vectorizeContent, maxChars)
+	}
+
+	// 向量化文本
+	vector, err := embeddingService.VectorizeText(vectorizeContent)
+	if err != nil {
+		return nil, fmt.Errorf("向量化失败: %v", err)
+	}
+
+	// 生成资源ID（基于路径的哈希）
+	h := md5.New()
+	h.Write([]byte(assetPath))
+	assetID := fmt.Sprintf("%x", h.Sum(nil))
+
+	// 获取文件名和类型
+	fileName := filepath.Base(assetPath)
+	fileType := strings.ToLower(strings.TrimPrefix(filepath.Ext(assetPath), "."))
+
+	// 准备展示内容（截断到500字符）
+	displayContent := content
+	if len(displayContent) > 500 {
+		displayContent = displayContent[:500] + "..."
+	}
+
+	// 创建资源向量对象
+	assetVector := &AssetVector{
+		ID:        assetID,
+		AssetPath: assetPath,
+		FileName:  fileName,
+		FileType:  fileType,
+		Content:   displayContent,
+		Vector:    vector,
+		UpdatedAt: time.Now(),
+		Metadata: map[string]interface{}{
+			"contentLength": len(content),
+			"vectorDim":     len(vector),
+		},
+	}
+
+	// 保存向量文件（与资源文件同目录）
+	if err := saveAssetVector(assetVector); err != nil {
+		return nil, fmt.Errorf("保存向量数据失败: %v", err)
+	}
+
+	logging.LogInfof("资源文件 %s 向量化成功，向量文件: %s", fileName, getVectorFilePath(assetPath))
+	return assetVector, nil
+}
+
 // saveBlockVector 保存块向量
 func saveBlockVector(blockVector *BlockVector) error {
 	vectors, err := loadBlockVectors()
@@ -690,6 +991,200 @@ func loadBlockVectors() (map[string]*BlockVector, error) {
 
 	err = json.Unmarshal(data, &vectors)
 	return vectors, err
+}
+
+// getVectorFilePath 根据资源文件路径获取对应的向量文件路径
+// 例如: /path/to/assets/doc.pdf -> /path/to/assets/doc.pdf.vectors.json
+func getVectorFilePath(assetPath string) string {
+	return assetPath + ".vectors.json"
+}
+
+// saveAssetVector 保存资源文件向量（存储在资源文件同目录）
+func saveAssetVector(assetVector *AssetVector) error {
+	vectorPath := getVectorFilePath(assetVector.AssetPath)
+
+	data, err := json.MarshalIndent(assetVector, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(vectorPath, data, 0644)
+}
+
+// loadAssetVector 加载单个资源文件的向量
+func loadAssetVector(assetPath string) (*AssetVector, error) {
+	vectorPath := getVectorFilePath(assetPath)
+
+	if !gulu.File.IsExist(vectorPath) {
+		return nil, fmt.Errorf("向量文件不存在: %s", vectorPath)
+	}
+
+	data, err := os.ReadFile(vectorPath)
+	if err != nil {
+		return nil, err
+	}
+
+	var vector AssetVector
+	err = json.Unmarshal(data, &vector)
+	if err != nil {
+		return nil, err
+	}
+
+	return &vector, nil
+}
+
+// loadAllAssetVectors 扫描工作空间下所有向量文件
+func loadAllAssetVectors(dataDir string) ([]*AssetVector, error) {
+	var vectors []*AssetVector
+
+	// 扫描 assets 目录下所有 .vectors.json 文件
+	assetsDir := filepath.Join(dataDir, "assets")
+	if !gulu.File.IsDir(assetsDir) {
+		return vectors, nil
+	}
+
+	err := filepath.Walk(assetsDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil // 忽略错误，继续扫描
+		}
+
+		if info.IsDir() {
+			return nil
+		}
+
+		if strings.HasSuffix(path, ".vectors.json") {
+			data, err := os.ReadFile(path)
+			if err != nil {
+				logging.LogWarnf("读取向量文件失败 [%s]: %v", path, err)
+				return nil
+			}
+
+			var vector AssetVector
+			if err := json.Unmarshal(data, &vector); err != nil {
+				logging.LogWarnf("解析向量文件失败 [%s]: %v", path, err)
+				return nil
+			}
+
+			vectors = append(vectors, &vector)
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		logging.LogWarnf("扫描向量文件时出错: %v", err)
+	}
+
+	return vectors, nil
+}
+
+// GetVectorizedAssets 获取已向量化的资源文件列表
+func GetVectorizedAssets(dataDir string) ([]*AssetVector, error) {
+	vectors, err := loadAllAssetVectors(dataDir)
+	if err != nil {
+		return nil, err
+	}
+
+	// 按更新时间倒序排序
+	sort.Slice(vectors, func(i, j int) bool {
+		return vectors[i].UpdatedAt.After(vectors[j].UpdatedAt)
+	})
+
+	return vectors, nil
+}
+
+// SemanticSearchAssets 资源文件语义搜索
+func SemanticSearchAssets(dataDir, query string, limit int) ([]*AssetVector, error) {
+	embeddingService := NewEmbeddingService()
+	if embeddingService == nil || !embeddingService.IsEnabled() {
+		return nil, fmt.Errorf("向量化服务未启用或未配置")
+	}
+
+	// 获取查询向量
+	queryVector, err := embeddingService.VectorizeText(query)
+	if err != nil {
+		return nil, fmt.Errorf("向量化查询失败: %v", err)
+	}
+
+	// 加载工作空间下所有资源向量
+	vectors, err := loadAllAssetVectors(dataDir)
+	if err != nil {
+		return nil, fmt.Errorf("加载资源向量数据失败: %v", err)
+	}
+
+	// 计算相似度并排序
+	type result struct {
+		vector     *AssetVector
+		similarity float64
+	}
+
+	var results []result
+	for _, vector := range vectors {
+		sim := cosineSimilarity(queryVector, vector.Vector)
+		if sim > 0.5 { // 相似度阈值
+			results = append(results, result{vector, sim})
+		}
+	}
+
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].similarity > results[j].similarity
+	})
+
+	if len(results) > limit {
+		results = results[:limit]
+	}
+
+	var finalResults []*AssetVector
+	for _, r := range results {
+		finalResults = append(finalResults, r.vector)
+	}
+
+	return finalResults, nil
+}
+
+// 异步向量化队列（只需要 assetPath，向量文件存储在同目录）
+var assetVectorizeQueue = make(chan string, 1000)
+
+// StartAssetVectorizeWorker 启动资源向量化工作协程
+func StartAssetVectorizeWorker() {
+	go func() {
+		for assetPath := range assetVectorizeQueue {
+			// 简单的防抖或延迟，等待文件完全写入
+			time.Sleep(2 * time.Second)
+
+			// 检查是否是支持的文档类型
+			ext := strings.ToLower(filepath.Ext(assetPath))
+			switch ext {
+			case ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".md", ".txt":
+				logging.LogInfof("开始自动向量化资源文件: %s", assetPath)
+				if _, err := VectorizeAsset(assetPath); err != nil {
+					logging.LogErrorf("自动向量化失败 [%s]: %v", assetPath, err)
+				} else {
+					logging.LogInfof("自动向量化成功: %s", assetPath)
+				}
+			}
+		}
+	}()
+}
+
+// EnqueueAssetVectorize 将资源文件加入向量化队列
+// assetPath 必须是绝对路径
+func EnqueueAssetVectorize(assetPath string) {
+	logging.LogInfof("尝试加入向量化队列: %s", assetPath)
+
+	// 检查向量化服务是否启用
+	embeddingService := NewEmbeddingService()
+	if embeddingService == nil || !embeddingService.IsEnabled() {
+		logging.LogWarnf("向量化服务未启用，跳过: %s", assetPath)
+		return
+	}
+
+	select {
+	case assetVectorizeQueue <- assetPath:
+		logging.LogInfof("已加入向量化队列: %s", assetPath)
+	default:
+		logging.LogWarnf("向量化队列已满，丢弃任务: %s", assetPath)
+	}
 }
 
 // saveNotebookSummary 保存笔记本摘要

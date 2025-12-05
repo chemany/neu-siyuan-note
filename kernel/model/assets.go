@@ -967,6 +967,18 @@ func UnusedAssets() (ret []string) {
 			toRemoves = append(toRemoves, asset)
 			continue
 		}
+
+		if strings.HasSuffix(asset, ".vectors.json") {
+			// RAG 向量化数据文件：检查对应的源文件是否被引用
+			// 向量化文件格式: 原文件名.vectors.json
+			sourceFile := strings.TrimSuffix(asset, ".vectors.json")
+			if _, sourceExists := linkDestMap[sourceFile]; sourceExists {
+				// 源文件被引用，排除向量化文件（不删除）
+				toRemoves = append(toRemoves, asset)
+			}
+			// 源文件未被引用，向量化文件会随源文件一起被标记为未引用
+			continue
+		}
 	}
 
 	// 排除数据库中引用的资源文件

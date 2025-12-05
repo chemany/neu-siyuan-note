@@ -170,11 +170,9 @@ func Serve(fastMode bool) {
 	api.ServeAPI(ginServer)
 
 	var host string
-	if model.Conf.System.NetworkServe || util.ContainerDocker == util.Container {
-		host = "0.0.0.0"
-	} else {
-		host = "127.0.0.1"
-	}
+	// 强制监听所有网络接口，因为通过 Nginx 反向代理访问，安全性由 Nginx 和认证系统保证
+	// 原逻辑: if model.Conf.System.NetworkServe || util.ContainerDocker == util.Container
+	host = "0.0.0.0"
 
 	ln, err := net.Listen("tcp", host+":"+util.ServerPort)
 	if err != nil {
@@ -556,7 +554,7 @@ func serveAssets(ginServer *gin.Engine) {
 	ginServer.GET("/public-assets/*path", publicAssetsHandler)
 	ginServer.HEAD("/public-assets/*path", publicAssetsHandler)
 
-	ginServer.GET("/assets/*path", model.CheckAuth, func(context *gin.Context) {
+	ginServer.GET("/assets/*path", model.CheckWebAuth, func(context *gin.Context) {
 		requestPath := context.Param("path")
 		if "/" == requestPath || "" == requestPath {
 			// 禁止访问根目录 Disable HTTP access to the /assets/ path https://github.com/siyuan-note/siyuan/issues/15257
