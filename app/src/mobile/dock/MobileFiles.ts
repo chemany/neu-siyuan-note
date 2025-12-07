@@ -8,7 +8,7 @@ import {fetchPost, fetchSyncPost} from "../../util/fetch";
 import {genUUID} from "../../util/genID";
 import {openMobileFileById} from "../editor";
 import {unicode2Emoji} from "../../emoji";
-import {mountHelp, newNotebook} from "../../util/mount";
+import {newNotebook} from "../../util/mount";
 import {newFile} from "../../util/newFile";
 import {MenuItem} from "../../menus/Menu";
 import {App} from "../../index";
@@ -40,22 +40,7 @@ export class MobileFiles extends Model {
                             this.onMount(data);
                             break;
                         case "createnotebook":
-                            setNoteBook((notebooks) => {
-                                let previousId: string;
-                                notebooks.find(item => {
-                                    if (!item.closed) {
-                                        if (item.id === data.data.box.id) {
-                                            if (previousId) {
-                                                this.element.querySelector(`.b3-list[data-url="${previousId}"]`).insertAdjacentHTML("afterend", this.genNotebook(data.data.box));
-                                            } else {
-                                                this.element.insertAdjacentHTML("afterbegin", this.genNotebook(data.data.box));
-                                            }
-                                            return true;
-                                        }
-                                        previousId = item.id;
-                                    }
-                                });
-                            });
+                            this.onCreateNotebook(data);
                             break;
                         case "unmount":
                         case "removeDoc":
@@ -238,9 +223,6 @@ export class MobileFiles extends Model {
             }
         });
         this.init();
-        if (window.siyuan.config.openHelp) {
-            mountHelp();
-        }
     }
 
     private genSort() {
@@ -486,6 +468,47 @@ export class MobileFiles extends Model {
         }
         fileItemElement.setAttribute("data-name", Lute.EscapeHTMLStr(data.title));
         fileItemElement.querySelector(".b3-list-item__text").innerHTML = escapeHtml(data.title);
+    }
+
+    private onCreateNotebook(data: { data: { box: INotebook, existed?: boolean } }) {
+        if (data.data.existed) {
+            return;
+        }
+        setNoteBook((notebooks: INotebook[]) => {
+            // 检查笔记本是否已经存在于 DOM 中
+            if (this.element.querySelector(`[data-url="${data.data.box.id}"]`)) {
+                return;
+            }
+            const html = this.genNotebook(data.data.box);
+            if (this.element.childElementCount === 0) {
+                this.element.innerHTML = html;
+            } else {
+                let previousId: string;
+                let inserted = false;
+                notebooks.find((item) => {
+                    if (!item.closed) {
+                        if (item.id === data.data.box.id) {
+                            if (previousId) {
+                                const previousElement = this.element.querySelector(`[data-url="${previousId}"]`);
+                                if (previousElement) {
+                                    previousElement.insertAdjacentHTML("afterend", html);
+                                    inserted = true;
+                                }
+                            }
+                            if (!inserted) {
+                                this.element.insertAdjacentHTML("afterbegin", html);
+                            }
+                            return true;
+                        }
+                        previousId = item.id;
+                    }
+                });
+                // 如果在 notebooks 列表中没有找到匹配的笔记本，直接插入到开头
+                if (!inserted && !this.element.querySelector(`[data-url="${data.data.box.id}"]`)) {
+                    this.element.insertAdjacentHTML("afterbegin", html);
+                }
+            }
+        });
     }
 
     private onMount(data: { data: { box: INotebook, existed?: boolean }, callback?: string }) {

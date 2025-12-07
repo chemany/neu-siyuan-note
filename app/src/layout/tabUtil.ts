@@ -21,7 +21,7 @@ import {openSearch} from "../search/spread";
 import {openRecentDocs} from "../business/openRecentDocs";
 import {openHistory} from "../history/history";
 import {newFile} from "../util/newFile";
-import {mountHelp, newNotebook} from "../util/mount";
+import {newNotebook} from "../util/mount";
 import {Constants} from "../constants";
 
 export const getActiveTab = (wndActive = true) => {
@@ -231,11 +231,6 @@ export const newCenterEmptyTab = (app: App) => {
                         break;
                     } else if (target.id === "editorEmptyNewNotebook") {
                         newNotebook();
-                        event.stopPropagation();
-                        event.preventDefault();
-                        break;
-                    } else if (target.id === "editorEmptyHelp") {
-                        mountHelp();
                         event.stopPropagation();
                         event.preventDefault();
                         break;

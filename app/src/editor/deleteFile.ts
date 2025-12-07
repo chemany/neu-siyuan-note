@@ -89,6 +89,15 @@ export const deleteFiles = (liElements: Element[]) => {
                         fetchPost("/api/notebook/removeNotebook", {
                             notebook: itemNotebookId,
                             callback: Constants.CB_MOUNT_REMOVE
+                        }, () => {
+                            // 主动从文档树中移除笔记本，不依赖 WebSocket 推送
+                            const fileModel = getDockByType("file")?.data?.file;
+                            if (fileModel instanceof Files) {
+                                const notebookElement = fileModel.element.querySelector(`ul[data-url="${itemNotebookId}"]`);
+                                if (notebookElement) {
+                                    notebookElement.remove();
+                                }
+                            }
                         });
                     }, undefined, true);
             }

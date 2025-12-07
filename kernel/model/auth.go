@@ -159,6 +159,11 @@ func ParseXAuthToken(r *http.Request) *jwt.Token {
 		}
 	}
 	
+	// 4. 如果还是没有，尝试从 URL 查询参数获取（用于 WebSocket 连接）
+	if tokenString == "" {
+		tokenString = r.URL.Query().Get("token")
+	}
+	
 	if tokenString != "" {
 		if token, err := ParseJWT(tokenString); err != nil {
 			logging.LogErrorf("JWT parse failed: %s", err)

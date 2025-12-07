@@ -11,7 +11,7 @@ import {MenuItem} from "../../menus/Menu";
 import {showMessage} from "../../dialog/message";
 import {fetchPost, fetchSyncPost} from "../../util/fetch";
 import {openEmojiPanel, unicode2Emoji} from "../../emoji";
-import {mountHelp, newNotebook} from "../../util/mount";
+import {newNotebook} from "../../util/mount";
 import {isNotCtrl, isOnlyMeta, setStorageVal, updateHotkeyAfterTip} from "../../protyle/util/compatibility";
 import {openFileById} from "../../editor/util";
 import {
@@ -42,7 +42,6 @@ export class Files extends Model {
             type: "filetree",
             id: options.tab.id,
             msgCallback(data) {
-                console.log("Files msgCallback received:", data?.cmd, data);
                 if (data) {
                     switch (data.cmd) {
                         case "reloadDocInfo":
@@ -63,39 +62,7 @@ export class Files extends Model {
                             });
                             break;
                         case "createnotebook":
-                            console.log("createnotebook received:", data.data);
-                            setNoteBook((notebooks) => {
-                                console.log("setNoteBook callback, notebooks:", notebooks);
-                                // 检查笔记本是否已经存在于 DOM 中
-                                if (this.element.querySelector(`.b3-list[data-url="${data.data.box.id}"]`)) {
-                                    console.log("notebook already exists in DOM");
-                                    return;
-                                }
-                                let previousId: string;
-                                let inserted = false;
-                                notebooks.find(item => {
-                                    if (!item.closed) {
-                                        if (item.id === data.data.box.id) {
-                                            console.log("found matching notebook:", item.id);
-                                            if (previousId) {
-                                                const previousElement = this.element.querySelector(`.b3-list[data-url="${previousId}"]`);
-                                                console.log("previousElement:", previousElement);
-                                                if (previousElement) {
-                                                    previousElement.insertAdjacentHTML("afterend", this.genNotebook(data.data.box));
-                                                    inserted = true;
-                                                    console.log("inserted after previous");
-                                                }
-                                            }
-                                            if (!inserted) {
-                                                this.element.insertAdjacentHTML("afterbegin", this.genNotebook(data.data.box));
-                                                console.log("inserted at beginning");
-                                            }
-                                            return true;
-                                        }
-                                        previousId = item.id;
-                                    }
-                                });
-                            });
+                            this.onCreateNotebook(data);
                             break;
                         case "unmount":
                             this.onRemove(data);
@@ -109,11 +76,7 @@ export class Files extends Model {
                         case "create":
                             // 无论 listDocTree 是否为 true，都调用 selectItem 来刷新文档树并选中新文档
                             // 这样可以确保新建文档后立即在文档树中显示
-                            console.log("create event received:", data.data);
-                            console.log("box.id:", data.data.box.id, "path:", data.data.path);
-                            this.selectItem(data.data.box.id, data.data.path).then((element) => {
-                                console.log("selectItem result:", element);
-                            });
+                            this.selectItem(data.data.box.id, data.data.path);
                             break;
                         case "createdailynote":
                         case "heading2doc":
@@ -786,10 +749,6 @@ export class Files extends Model {
             newElement.classList.remove("dragover", "dragover__bottom", "dragover__top");
         });
         this.init();
-        if (window.siyuan.config.openHelp) {
-            // 需等待链接建立，不能放在 ongetconfig 中
-            mountHelp();
-        }
     }
 
     private updateDocInfo(data: IWebSocketData) {
@@ -963,6 +922,47 @@ data-type="navigation-root" data-path="/">
                     targetElement.parentElement.remove();
                 } else {
                     targetElement.remove();
+                }
+            }
+        });
+    }
+
+    private onCreateNotebook(data: { data: { box: INotebook, existed?: boolean } }) {
+        if (data.data.existed) {
+            return;
+        }
+        setNoteBook((notebooks: INotebook[]) => {
+            // 检查笔记本是否已经存在于 DOM 中
+            if (this.element.querySelector(`[data-url="${data.data.box.id}"]`)) {
+                return;
+            }
+            const html = this.genNotebook(data.data.box);
+            if (this.element.childElementCount === 0) {
+                this.element.innerHTML = html;
+            } else {
+                let previousId: string;
+                let inserted = false;
+                notebooks.find((item) => {
+                    if (!item.closed) {
+                        if (item.id === data.data.box.id) {
+                            if (previousId) {
+                                const previousElement = this.element.querySelector(`[data-url="${previousId}"]`);
+                                if (previousElement) {
+                                    previousElement.insertAdjacentHTML("afterend", html);
+                                    inserted = true;
+                                }
+                            }
+                            if (!inserted) {
+                                this.element.insertAdjacentHTML("afterbegin", html);
+                            }
+                            return true;
+                        }
+                        previousId = item.id;
+                    }
+                });
+                // 如果在 notebooks 列表中没有找到匹配的笔记本，直接插入到开头
+                if (!inserted && !this.element.querySelector(`[data-url="${data.data.box.id}"]`)) {
+                    this.element.insertAdjacentHTML("afterbegin", html);
                 }
             }
         });

@@ -71,7 +71,6 @@ export class Model {
         ws.onmessage = (event) => {
             if (options.msgCallback) {
                 const rawData = JSON.parse(event.data);
-                console.log(`WebSocket [${options.type}] received:`, rawData.cmd, rawData);
                 const data = processMessage(rawData);
                 options.msgCallback.call(this, data);
             }
