@@ -3,12 +3,14 @@ import {showMessage} from "../dialog/message";
 import {isMobile} from "./functions";
 import {fetchPost} from "./fetch";
 import {Dialog} from "../dialog";
-import {getOpenNotebookCount} from "./pathName";
+import {getOpenNotebookCount, setNoteBook} from "./pathName";
 import {validateName} from "../editor/rename";
 import {setStorageVal} from "../protyle/util/compatibility";
 import {openFileById} from "../editor/util";
 import {openMobileFileById} from "../mobile/editor";
 import {App} from "../index";
+import {getDockByType} from "../layout/tabUtil";
+import {Files} from "../layout/dock/Files";
 
 export const fetchNewDailyNote = (app: App, notebook: string) => {
     fetchPost("/api/filetree/createDailyNote", {
@@ -92,16 +94,6 @@ export const newDailyNote = (app: App) => {
     }
 };
 
-export const mountHelp = () => {
-    const notebookId = Constants.HELP_PATH[window.siyuan.config.appearance.lang as "zh_CN" | "en_US"];
-    fetchPost("/api/notebook/removeNotebook", {notebook: notebookId, callback: Constants.CB_MOUNT_REMOVE}, () => {
-        fetchPost("/api/notebook/openNotebook", {
-            notebook: notebookId,
-            app: Constants.SIYUAN_APPID,
-        });
-    });
-};
-
 export const newNotebook = () => {
     const dialog = new Dialog({
         title: window.siyuan.languages.newNotebook,
@@ -129,6 +121,17 @@ export const newNotebook = () => {
         }
         fetchPost("/api/notebook/createNotebook", {
             name
+        }, (response) => {
+            // 主动刷新笔记本列表，不依赖 WebSocket 推送
+            if (response.code === 0 && response.data?.notebook) {
+                setNoteBook(() => {
+                    // 刷新文档树
+                    const fileModel = getDockByType("file")?.data?.file;
+                    if (fileModel instanceof Files) {
+                        fileModel.init(false);
+                    }
+                });
+            }
         });
         dialog.destroy();
     });

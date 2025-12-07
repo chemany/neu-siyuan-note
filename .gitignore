@@ -141,3 +141,48 @@ pip-log.txt
 conf/app/
 **/conf/system/conf.json
 resources/*.asar
+
+# ========================================
+# 灵枢笔记 - 排除原版文档
+# ========================================
+# 保留 README.md (灵枢笔记说明)
+# 排除思源笔记原版文档
+README_zh_CN.md
+README_ja_JP.md
+CHANGELOG.md
+API.md
+API_zh_CN.md
+
+# 排除开发过程中的临时文档
+思源笔记多用户Web应用改造技术总结.md
+ACCOUNT_INTEGRATION_SUMMARY.md
+AI_ENHANCEMENT_GUIDE.md
+AI_SETTINGS_BUGFIX.md
+AI_SETTINGS_ENHANCEMENT.md
+API_ROUTING_FIX.md
+ASSET_VECTORIZATION_MANUAL.md
+AUTO_VECTORIZATION_DESIGN.md
+BUILD_AND_RUN.md
+BUILTIN_MODEL_INTEGRATION.md
+DEPLOYMENT_SUMMARY.md
+EXTERNAL_ACCESS_FIX.md
+FINAL_SUMMARY.md
+NGINX_CONFIG_GUIDE.md
+NGINX_REMOTE_ACCESS_FIX.md
+NOTEBOOK_OPTIMIZATION_SUMMARY.md
+PATH_ISSUE_SOLUTIONS.md
+RAG_USER_MANUAL.md
+SIMPLIFIED_SUMMARY.md
+SUB_FILTER_SOLUTION.md
+SUB_PATH_FIX_SUMMARY.md
+SYNC_SIMPLIFICATION_GUIDE.md
+UI_OPTIMIZATION_GUIDE.md
+WEB_MULTIUSER_GUIDE.md
+
+# 排除临时脚本
+fix-embedding-config.js
+fix-notepads-final.py
+fix-unified-db.js
+migrate-notepads-to-siyuan.sh
+sync-users-to-unified.js
+verify-external-access.sh

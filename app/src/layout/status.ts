@@ -2,7 +2,7 @@
 import {getDockByType} from "./tabUtil";
 import {hasClosestByClassName} from "../protyle/util/hasClosest";
 import {fetchPost} from "../util/fetch";
-import {mountHelp} from "../util/mount";
+
 /// #if !BROWSER
 import {ipcRenderer} from "electron";
 /// #endif
@@ -64,14 +64,6 @@ export const initStatus = (isWindow = false) => {
                 }
                 window.siyuan.menus.menu.remove();
                 window.siyuan.menus.menu.element.setAttribute("data-name", Constants.MENU_STATUS_HELP);
-                window.siyuan.menus.menu.append(new MenuItem({
-                    label: window.siyuan.languages.userGuide,
-                    icon: "iconHelp",
-                    ignore: isIPad() || window.siyuan.config.readonly,
-                    click: () => {
-                        mountHelp();
-                    }
-                }).element);
                 window.siyuan.menus.menu.append(new MenuItem({
                     label: window.siyuan.languages.feedback,
                     icon: "iconFeedback",

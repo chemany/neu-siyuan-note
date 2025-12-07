@@ -23,6 +23,7 @@ import (
 	"github.com/88250/gulu"
 	"github.com/olahol/melody"
 	"github.com/siyuan-note/eventbus"
+	"github.com/siyuan-note/logging"
 )
 
 var (
@@ -371,15 +372,20 @@ func single(msg []byte, appId, sid string) {
 }
 
 func Broadcast(msg []byte) {
+	sessionCount := 0
 	sessions.Range(func(key, value interface{}) bool {
 		appSessions := value.(*sync.Map)
 		appSessions.Range(func(key, value interface{}) bool {
 			session := value.(*melody.Session)
+			sessionType, _ := session.Get("type")
+			logging.LogInfof("Broadcasting to session type [%v], app [%v]", sessionType, key)
 			session.Write(msg)
+			sessionCount++
 			return true
 		})
 		return true
 	})
+	logging.LogInfof("Broadcast sent to %d sessions", sessionCount)
 }
 
 func broadcastOtherApps(msg []byte, excludeApp string) {

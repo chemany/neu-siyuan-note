@@ -4,7 +4,7 @@ import { ipcRenderer } from "electron";
 /// #endif
 import { openHistory } from "../history/history";
 import { getOpenNotebookCount, originalPath, pathPosix, useShell } from "../util/pathName";
-import { fetchNewDailyNote, mountHelp, newDailyNote } from "../util/mount";
+import { fetchNewDailyNote, newDailyNote } from "../util/mount";
 import { fetchPost } from "../util/fetch";
 import { Constants } from "../constants";
 import {
@@ -524,25 +524,22 @@ export const workspaceMenu = (app: App, rect: DOMRect) => {
             }).element);
             window.siyuan.menus.menu.append(new MenuItem({ id: "separator_2", type: "separator" }).element);
         }
-        window.siyuan.menus.menu.append(new MenuItem({
-            id: "userGuide",
-            label: window.siyuan.languages.userGuide,
-            icon: "iconHelp",
-            ignore: isIPad() || window.siyuan.config.readonly,
-            click: () => {
-                mountHelp();
-            }
-        }).element);
+
         window.siyuan.menus.menu.append(new MenuItem({
             id: "feedback",
             label: window.siyuan.languages.feedback,
             icon: "iconFeedback",
             click: () => {
-                if ("zh_CN" === window.siyuan.config.lang || "zh_CHT" === window.siyuan.config.lang) {
-                    window.open("https://ld246.com/article/1649901726096");
-                } else {
-                    window.open("https://liuyun.io/article/1686530886208");
-                }
+                // 自定义反馈链接
+                window.open("https://www.cheman.top");
+            }
+        }).element);
+        window.siyuan.menus.menu.append(new MenuItem({
+            id: "feedbackEmail",
+            label: window.siyuan.languages.feedback + " (Email)",
+            icon: "iconEmail",
+            click: () => {
+                window.open("mailto:125607565@qq.com?subject=思源笔记问题反馈");
             }
         }).element);
         /// #if !BROWSER

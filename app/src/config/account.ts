@@ -197,7 +197,7 @@ ${genSVGBG()}
                     <div style="font-size: 13px; color: var(--b3-theme-on-surface-light);">
                         <div style="display: flex; align-items: center; margin-bottom: 8px;">
                             <svg style="width: 16px; height: 16px; margin-right: 8px; color: var(--b3-theme-primary);"><use xlink:href="#iconMark"></use></svg>
-                            思源笔记
+                            灵枢笔记
                         </div>
                         <div style="display: flex; align-items: center; margin-bottom: 8px;">
                             <svg style="width: 16px; height: 16px; margin-right: 8px; color: var(--b3-theme-primary);"><use xlink:href="#iconMark"></use></svg>
@@ -334,7 +334,7 @@ ${renewHTML}<div class="fn__hr--b"></div>`;
             </div>
             
             <!-- 标题 -->
-            <h2 style="margin: 0 0 12px 0; font-size: 24px; font-weight: 600; color: var(--b3-theme-on-background);">欢迎使用思源笔记</h2>
+            <h2 style="margin: 0 0 12px 0; font-size: 24px; font-weight: 600; color: var(--b3-theme-on-background);">欢迎使用灵枢笔记</h2>
             <p style="margin: 0 0 32px 0; font-size: 15px; line-height: 1.6; color: var(--b3-theme-on-surface);">
                 登录您的账户以同步数据和访问更多功能
             </p>
@@ -361,13 +361,13 @@ ${renewHTML}<div class="fn__hr--b"></div>`;
                     关于统一注册服务
                 </h3>
                 <p style="margin: 0; font-size: 14px; line-height: 1.8; color: var(--b3-theme-on-surface);">
-                    思源笔记使用<strong style="color: var(--b3-theme-primary);">统一注册服务</strong>进行账户管理，一个账户即可登录多个应用。
+                    灵枢笔记使用<strong style="color: var(--b3-theme-primary);">统一注册服务</strong>进行账户管理，一个账户即可登录多个应用。
                 </p>
                 <div style="margin-top: 20px; padding: 16px; background: var(--b3-theme-background); border-radius: 12px; border-left: 4px solid var(--b3-theme-primary);">
                     <div style="font-size: 13px; color: var(--b3-theme-on-surface-light);">
                         <div style="display: flex; align-items: center; margin-bottom: 8px;">
                             <svg style="width: 16px; height: 16px; margin-right: 8px; color: var(--b3-theme-primary);"><use xlink:href="#iconMark"></use></svg>
-                            思源笔记
+                            灵枢笔记
                         </div>
                         <div style="display: flex; align-items: center; margin-bottom: 8px;">
                             <svg style="width: 16px; height: 16px; margin-right: 8px; color: var(--b3-theme-primary);"><use xlink:href="#iconMark"></use></svg>
