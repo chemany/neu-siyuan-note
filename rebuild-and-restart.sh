@@ -8,7 +8,7 @@ echo "🔄 开始重新构建思源笔记..."
 echo ""
 
 # 切换到项目目录
-cd /root/code/siyuan
+cd /root/code/NeuraLink-Notes
 
 # 1. 构建前端 (使用 desktop 构建，Web版访问 /stage/build/desktop/)
 echo "📦 [1/3] 构建前端 (desktop)..."

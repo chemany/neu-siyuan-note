@@ -22,6 +22,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/88250/gulu"
 	"github.com/gin-gonic/gin"
@@ -597,5 +598,118 @@ func getVectorizedAssets(c *gin.Context) {
 	ret.Data = map[string]interface{}{
 		"assets": assets,
 		"count":  len(assets),
+	}
+}
+
+// ===== OCR API (PaddleOCR) =====
+
+// ocrAsset 对资源文件进行 OCR 识别
+func ocrAsset(c *gin.Context) {
+	ret := gulu.Ret.NewResult()
+	defer c.JSON(http.StatusOK, ret)
+
+	arg, ok := util.JsonArg(c, ret)
+	if !ok {
+		return
+	}
+
+	assetPath, ok := arg["assetPath"].(string)
+	if !ok || assetPath == "" {
+		ret.Code = -1
+		ret.Msg = "缺少资源文件路径参数"
+		return
+	}
+
+	// 处理相对路径
+	var fullPath string
+	if strings.HasPrefix(assetPath, "assets/") {
+		fullPath = filepath.Join(util.DataDir, assetPath)
+	} else if strings.HasPrefix(assetPath, "/") {
+		fullPath = assetPath
+	} else {
+		fullPath = filepath.Join(util.DataDir, "assets", assetPath)
+	}
+
+	// 执行 OCR
+	result, err := model.OCRAsset(fullPath)
+	if err != nil {
+		ret.Code = -1
+		ret.Msg = fmt.Sprintf("OCR 识别失败: %v", err)
+		return
+	}
+
+	ret.Data = map[string]interface{}{
+		"success":   true,
+		"id":        result.ID,
+		"assetPath": result.AssetPath,
+		"fileName":  result.FileName,
+		"fileType":  result.FileType,
+		"fullText":  result.FullText,
+		"pageCount": result.PageCount,
+		"ocrFile":   fullPath + ".ocr.json",
+		"updatedAt": result.UpdatedAt,
+		"message":   fmt.Sprintf("OCR 识别完成: %s, 共 %d 页", result.FileName, result.PageCount),
+	}
+}
+
+// ocrHealthCheck 检查 OCR 服务状态
+func ocrHealthCheck(c *gin.Context) {
+	ret := gulu.Ret.NewResult()
+	defer c.JSON(http.StatusOK, ret)
+
+	healthy, msg := model.PaddleOCRHealthCheck()
+
+	ret.Data = map[string]interface{}{
+		"healthy": healthy,
+		"message": msg,
+	}
+}
+
+// getOCRResult 获取资源文件的 OCR 结果
+func getOCRResult(c *gin.Context) {
+	ret := gulu.Ret.NewResult()
+	defer c.JSON(http.StatusOK, ret)
+
+	arg, ok := util.JsonArg(c, ret)
+	if !ok {
+		return
+	}
+
+	assetPath, ok := arg["assetPath"].(string)
+	if !ok || assetPath == "" {
+		ret.Code = -1
+		ret.Msg = "缺少资源文件路径参数"
+		return
+	}
+
+	// 处理相对路径
+	var fullPath string
+	if strings.HasPrefix(assetPath, "assets/") {
+		fullPath = filepath.Join(util.DataDir, assetPath)
+	} else if strings.HasPrefix(assetPath, "/") {
+		fullPath = assetPath
+	} else {
+		fullPath = filepath.Join(util.DataDir, "assets", assetPath)
+	}
+
+	// 检查是否有 OCR 结果
+	if !model.HasOCRResult(fullPath) {
+		ret.Code = -1
+		ret.Msg = "该资源文件没有 OCR 结果"
+		return
+	}
+
+	// 获取 OCR 文本
+	text, err := model.GetOCRText(fullPath)
+	if err != nil {
+		ret.Code = -1
+		ret.Msg = fmt.Sprintf("获取 OCR 结果失败: %v", err)
+		return
+	}
+
+	ret.Data = map[string]interface{}{
+		"assetPath": assetPath,
+		"fullText":  text,
+		"ocrFile":   fullPath + ".ocr.json",
 	}
 }

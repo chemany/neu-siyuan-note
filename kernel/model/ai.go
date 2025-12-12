@@ -1286,7 +1286,7 @@ func ParseAttachment(assetPath string) (string, error) {
 	}
 }
 
-// parsePDF 使用pdftotext解析PDF文件
+// parsePDF 使用pdftotext解析PDF文件，如果是扫描版则自动调用OCR
 func parsePDF(filePath string) (string, error) {
 	// 使用pdftotext命令行工具
 	cmd := exec.Command("pdftotext", "-enc", "UTF-8", "-layout", filePath, "-")
@@ -1296,18 +1296,59 @@ func parsePDF(filePath string) (string, error) {
 		cmd = exec.Command("pdftotext", "-enc", "UTF-8", filePath, "-")
 		output, err = cmd.Output()
 		if err != nil {
-			return "", fmt.Errorf("PDF解析失败: %v", err)
+			// pdftotext 失败，尝试 OCR
+			logging.LogWarnf("pdftotext 解析失败，尝试 OCR: %v", err)
+			return tryOCRForPDF(filePath)
 		}
 	}
 
 	content := string(output)
 	content = strings.TrimSpace(content)
 
-	if content == "" {
-		return "", fmt.Errorf("PDF内容为空或无法提取文本")
+	// 检查提取的文本是否足够（判断是否为扫描版PDF）
+	cleanContent := strings.ReplaceAll(content, "\n", "")
+	cleanContent = strings.ReplaceAll(cleanContent, " ", "")
+	cleanContent = strings.TrimSpace(cleanContent)
+
+	if len(cleanContent) < 50 {
+		// 文本内容过少，可能是扫描版PDF，尝试OCR
+		logging.LogInfof("PDF 文本内容过少 (%d 字符)，尝试 OCR: %s", len(cleanContent), filePath)
+		ocrContent, ocrErr := tryOCRForPDF(filePath)
+		if ocrErr == nil && len(ocrContent) > len(content) {
+			return ocrContent, nil
+		}
+		// OCR 失败或结果不如原始提取，返回原始内容
+		if content != "" {
+			return content, nil
+		}
+		if ocrErr != nil {
+			return "", fmt.Errorf("PDF内容为空且OCR失败: %v", ocrErr)
+		}
 	}
 
 	// 限制返回内容长度，避免过大
+	if len(content) > 50000 {
+		content = content[:50000] + "\n...(内容已截断)"
+	}
+
+	return content, nil
+}
+
+// tryOCRForPDF 尝试对PDF进行OCR
+func tryOCRForPDF(filePath string) (string, error) {
+	// 检查 OCR 服务是否可用
+	healthy, msg := PaddleOCRHealthCheck()
+	if !healthy {
+		return "", fmt.Errorf("OCR 服务不可用: %s", msg)
+	}
+
+	// 执行 OCR
+	result, err := OCRAsset(filePath)
+	if err != nil {
+		return "", err
+	}
+
+	content := result.FullText
 	if len(content) > 50000 {
 		content = content[:50000] + "\n...(内容已截断)"
 	}

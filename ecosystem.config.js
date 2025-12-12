@@ -2,13 +2,14 @@ module.exports = {
     apps: [
         {
             name: 'siyuan-kernel',
-            cwd: '/root/code/siyuan/kernel',
+            cwd: '/root/code/NeuraLink-Notes/kernel',
             script: './siyuan-kernel',
-            args: '--mode production --port 6806 --workspace /root/code/siyuan/workspace',
+            args: '--mode prod --port 6806 --wd /root/code/NeuraLink-Notes --workspace /root/code/NeuraLink-Notes/workspace',
             env: {
-                SIYUAN_WORKSPACE: '/root/code/siyuan/workspace',
+                SIYUAN_WORKSPACE: '/root/code/NeuraLink-Notes/workspace',
                 SIYUAN_PORT: '6806',
                 SIYUAN_WEB_MODE: 'true',
+                SIYUAN_ACCESS_AUTH_CODE_BYPASS: 'true',
                 // 用户数据根目录 - 每个用户的工作空间将在此目录下创建
                 SIYUAN_USER_DATA_ROOT: '/root/code/MindOcean/user-data/notes',
                 // AI 配置 - 可以根据需要设置

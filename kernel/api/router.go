@@ -531,6 +531,11 @@ func ServeAPI(ginServer *gin.Engine) {
 	ginServer.Handle("POST", "/api/ai/vectorizeAsset", model.CheckWebAuth, model.CheckAdminRole, vectorizeAsset)
 	ginServer.Handle("POST", "/api/ai/getVectorizedAssets", model.CheckWebAuth, getVectorizedAssets)
 
+	// OCR API (PaddleOCR)
+	ginServer.Handle("POST", "/api/ai/ocrAsset", model.CheckWebAuth, ocrAsset)
+	ginServer.Handle("POST", "/api/ai/ocrHealthCheck", model.CheckWebAuth, ocrHealthCheck)
+	ginServer.Handle("POST", "/api/ai/getOCRResult", model.CheckWebAuth, getOCRResult)
+
 	ginServer.Handle("POST", "/api/petal/loadPetals", model.CheckWebAuth, loadPetals)
 	ginServer.Handle("POST", "/api/petal/setPetalEnabled", model.CheckWebAuth, model.CheckAdminRole, model.CheckReadonly, setPetalEnabled)
 

@@ -185,7 +185,7 @@ func (s *FileUserStore) createUserWorkspace(user *User) error {
 	// 从环境变量获取用户数据根路径,如果未设置则使用默认路径
 	userDataRoot := os.Getenv("SIYUAN_USER_DATA_ROOT")
 	if userDataRoot == "" {
-		userDataRoot = "/mnt/nas-sata12/MindOcean/user-data/notes"
+		userDataRoot = "/root/code/MindOcean/user-data/notes"
 	}
 
 	workspaceDir := filepath.Join(userDataRoot, user.Username)
