@@ -346,6 +346,19 @@ func Upload(c *gin.Context) {
 			// 如果是解压后的文件夹，暂时不支持自动向量化
 			if !needUnzip2Dir {
 				EnqueueAssetVectorize(writePath)
+
+				// 自动 OCR 识别（针对 PDF 文件）
+				if ext == ".pdf" {
+					go func(pdfPath string) {
+						logging.LogInfof("开始自动 OCR 识别: %s", filepath.Base(pdfPath))
+						_, err := OCRAsset(pdfPath)
+						if err != nil {
+							logging.LogWarnf("自动 OCR 识别失败: %v", err)
+						} else {
+							logging.LogInfof("自动 OCR 识别完成: %s", filepath.Base(pdfPath))
+						}
+					}(writePath)
+				}
 			}
 		}
 	}

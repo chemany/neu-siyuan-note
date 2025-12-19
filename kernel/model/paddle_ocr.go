@@ -32,9 +32,9 @@ type PaddleOCRConfig struct {
 	Enabled bool   `json:"enabled"`
 }
 
-// PaddleOCRRequest OCR 请求结构
+// PaddleOCRRequest OCR 请求结构 (适配 Umi-OCR)
 type PaddleOCRRequest struct {
-	Image string `json:"image"` // base64 编码的图片
+	Base64 string `json:"base64"`
 }
 
 // PaddleOCRURLRequest URL OCR 请求结构
@@ -42,18 +42,18 @@ type PaddleOCRURLRequest struct {
 	URL string `json:"url"`
 }
 
-// PaddleOCRResult OCR 识别结果
+// PaddleOCRResult OCR 识别结果 (适配 Umi-OCR)
 type PaddleOCRResult struct {
 	Text       string      `json:"text"`
-	Confidence float64     `json:"confidence"`
-	BBox       [][]float64 `json:"bbox"`
+	Confidence float64     `json:"score"`
+	Position   [][]float64 `json:"box"`
 }
 
-// PaddleOCRResponse OCR 响应结构
+// PaddleOCRResponse OCR 响应结构 (适配 Umi-OCR)
 type PaddleOCRResponse struct {
-	Status  string            `json:"status"`
-	Message string            `json:"message"`
-	Results []PaddleOCRResult `json:"results"`
+	Code    int               `json:"code"`
+	Data    []PaddleOCRResult `json:"data"`
+	Message string            `json:"msg"`
 }
 
 // OCRAssetResult OCR 资源文件结果（保存到 .ocr.json）
@@ -115,7 +115,8 @@ func PaddleOCRFromBase64(base64Image string) (*PaddleOCRResponse, error) {
 		return nil, fmt.Errorf("OCR 服务未启用")
 	}
 
-	reqBody := PaddleOCRRequest{Image: base64Image}
+	// 构建 JSON 请求
+	reqBody := PaddleOCRRequest{Base64: base64Image}
 	jsonData, err := json.Marshal(reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("序列化请求失败: %v", err)
@@ -123,7 +124,7 @@ func PaddleOCRFromBase64(base64Image string) (*PaddleOCRResponse, error) {
 
 	client := &http.Client{Timeout: PaddleOCRTimeout}
 	resp, err := client.Post(
-		config.BaseURL+"/ocr",
+		config.BaseURL+"/api/ocr",
 		"application/json",
 		bytes.NewBuffer(jsonData),
 	)
@@ -139,11 +140,16 @@ func PaddleOCRFromBase64(base64Image string) (*PaddleOCRResponse, error) {
 
 	var ocrResp PaddleOCRResponse
 	if err := json.Unmarshal(body, &ocrResp); err != nil {
-		return nil, fmt.Errorf("解析响应失败: %v", err)
+		return nil, fmt.Errorf("解析响应失败: %v, body: %s", err, string(body))
 	}
 
-	if ocrResp.Status != "success" {
-		return nil, fmt.Errorf("OCR 识别失败: %s", ocrResp.Message)
+	// Umi-OCR 状态码: 100 成功, 101 无文字
+	if ocrResp.Code != 100 {
+		if ocrResp.Code == 101 {
+			// 返回空结果而不是错误，因为“无文字”是正常情况
+			return &ocrResp, nil
+		}
+		return nil, fmt.Errorf("OCR 识别失败: %s (code: %d)", ocrResp.Message, ocrResp.Code)
 	}
 
 	return &ocrResp, nil
@@ -217,8 +223,8 @@ func OCRAsset(assetPath string) (*OCRAssetResult, error) {
 		if err != nil {
 			return nil, err
 		}
-		allResults = resp.Results
-		for _, r := range resp.Results {
+		allResults = resp.Data
+		for _, r := range resp.Data {
 			fullTextBuilder.WriteString(r.Text)
 			fullTextBuilder.WriteString("\n")
 		}
@@ -332,7 +338,7 @@ func ocrPDFFile(pdfPath string) ([]PaddleOCRResult, string, int, error) {
 		// 添加页码标记
 		fullTextBuilder.WriteString(fmt.Sprintf("\n--- 第 %d 页 ---\n", i+1))
 
-		for _, r := range resp.Results {
+		for _, r := range resp.Data {
 			allResults = append(allResults, r)
 			fullTextBuilder.WriteString(r.Text)
 			fullTextBuilder.WriteString("\n")
