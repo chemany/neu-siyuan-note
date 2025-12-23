@@ -295,11 +295,32 @@ export class AI extends Model {
             '.py', '.js', '.ts', '.go', '.java', '.c', '.cpp', '.h', '.sh'  // 代码文件
         ];
 
+        // 优先查找OCR JSON文件的辅助函数
+        const findOCRJson = (pdfPath: string): string | null => {
+            // 从PDF路径生成OCR JSON文件路径
+            // 例如: assets/1210保障线汇报记录-20251223091526-xt9p3ts.pdf
+            // OCR文件: assets/1210保障线汇报记录-20251223091526-xt9p3ts.pdf.ocr.json
+            const ocrJsonPath = `${pdfPath}.ocr.json`;
+            
+            console.log(`[AI] 检查OCR文件: ${ocrJsonPath} (对应PDF: ${pdfPath})`);
+            return ocrJsonPath;
+        };
+
         const addAttachment = (href: string) => {
             if (href && supportedExtensions.some(ext => href.toLowerCase().endsWith(ext))) {
-                if (!attachments.includes(href)) {
-                    attachments.push(href);
-                    console.log("[AI] 找到附件:", href);
+                // 如果是PDF文件，检查是否存在对应的OCR JSON文件
+                if (href.toLowerCase().endsWith('.pdf')) {
+                    const ocrJsonPath = findOCRJson(href);
+                    if (ocrJsonPath && !attachments.includes(ocrJsonPath)) {
+                        attachments.push(ocrJsonPath);
+                        console.log("[AI] 找到OCR JSON文件:", ocrJsonPath);
+                    }
+                } else {
+                    // 非PDF文件直接添加
+                    if (!attachments.includes(href)) {
+                        attachments.push(href);
+                        console.log("[AI] 找到附件:", href);
+                    }
                 }
             }
         };
@@ -370,35 +391,63 @@ export class AI extends Model {
             return "";
         }
 
-        try {
-            const result = await fetchSyncPost('/api/ai/batchParseAttachments', {
-                paths: paths
-            });
+        let attachmentContent = "";
 
-            if (result.code !== 0) {
-                console.warn("附件解析失败:", result.msg);
-                return "";
-            }
+        for (const path of paths) {
+            try {
+                // 如果是OCR JSON文件，使用getOCRResult API读取
+                if (path.toLowerCase().endsWith('.ocr.json')) {
+                    console.log("[AI] 读取OCR JSON文件:", path);
+                    // 从OCR JSON文件路径提取原始PDF路径
+                    const pdfPath = path.replace('.ocr.json', '');
+                    
+                    const result = await fetchSyncPost('/api/ai/getOCRResult', {
+                        assetPath: pdfPath
+                    });
 
-            const results = result.data?.results || [];
-            let attachmentContent = "";
+                    if (result.code === 0 && result.data) {
+                        const fullText = result.data.fullText || "";
+                        const fileName = path.split('/').pop()?.replace('.ocr.json', '') || path;
+                        
+                        // 限制每个附件内容长度
+                        const content = fullText.length > 5000
+                            ? fullText.substring(0, 5000) + "...(内容已截断)"
+                            : fullText;
+                        
+                        attachmentContent += `\n\n--- OCR文档: ${fileName} ---\n${content}`;
+                        console.log("[AI] 成功读取OCR JSON文件，内容长度:", content.length);
+                    } else {
+                        console.warn("[AI] 读取OCR JSON文件失败:", path, result.msg);
+                    }
+                } else {
+                    // 其他文件类型使用原有的批量解析接口
+                    console.log("[AI] 使用批量解析接口处理文件:", path);
+                    const result = await fetchSyncPost('/api/ai/batchParseAttachments', {
+                        paths: [path]
+                    });
 
-            for (const item of results) {
-                if (item.content && !item.error) {
-                    const fileName = item.path.split('/').pop() || item.path;
-                    // 限制每个附件内容长度
-                    const content = item.content.length > 5000 
-                        ? item.content.substring(0, 5000) + "...(内容已截断)"
-                        : item.content;
-                    attachmentContent += `\n\n--- 附件: ${fileName} ---\n${content}`;
+                    if (result.code === 0) {
+                        const results = result.data?.results || [];
+                        for (const item of results) {
+                            if (item.content && !item.error) {
+                                const fileName = item.path.split('/').pop() || item.path;
+                                // 限制每个附件内容长度
+                                const content = item.content.length > 5000
+                                    ? item.content.substring(0, 5000) + "...(内容已截断)"
+                                    : item.content;
+                                attachmentContent += `\n\n--- 附件: ${fileName} ---\n${content}`;
+                            }
+                        }
+                    } else {
+                        console.warn("[AI] 批量解析附件失败:", result.msg);
+                    }
                 }
+            } catch (error) {
+                console.error("[AI] 解析附件失败:", path, error);
             }
-
-            return attachmentContent;
-        } catch (error) {
-            console.error("解析附件失败:", error);
-            return "";
         }
+
+        return attachmentContent;
     }
 
     private async callAI(question: string, docContent: string): Promise<string> {

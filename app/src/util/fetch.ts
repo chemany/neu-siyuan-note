@@ -73,10 +73,16 @@ export const fetchPost = (url: string, data?: any, cb?: (response: IWebSocketDat
                 };
             default:
                 if (401 == response.status) {
-                    // 返回鉴权失败的话直接刷新页面，避免用户在当前页面操作 https://github.com/siyuan-note/siyuan/issues/15163
+                    // 返回鉴权失败的话跳转到登录页，避免用户在当前页面操作 https://github.com/siyuan-note/siyuan/issues/15163
+                    // 清除过期的token和用户信息
+                    localStorage.removeItem('siyuan_token');
+                    localStorage.removeItem('siyuan_user');
+                    document.cookie = 'siyuan_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+                    
+                    // 重定向到应用根路径，会自动跳转到登录页
                     setTimeout(() => {
-                        window.location.reload();
-                    }, 3000);
+                        window.location.href = window.location.origin + '/notepads/';
+                    }, 1000);
                 }
 
                 if (response.headers.get("content-type")?.indexOf("application/json") > -1) {
