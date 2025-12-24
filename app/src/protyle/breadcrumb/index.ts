@@ -59,6 +59,7 @@ export class Breadcrumb {
 <button class="protyle-breadcrumb__icon fn__none ariaLabel" aria-label="${updateHotkeyTip(window.siyuan.config.keymap.editor.general.exitFocus.custom)}" data-type="exit-focus">${window.siyuan.languages.exitFocus}</button>
 ${padHTML}
 <button class="block__icon fn__flex-center ariaLabel${window.siyuan.config.readonly ? " fn__none" : ""}" aria-label="${window.siyuan.languages.lockEdit}" data-type="readonly" data-subtype="unlock"><svg><use xlink:href="#iconUnlock"></use></svg></button>
+<button class="block__icon fn__flex-center ariaLabel" data-type="record" aria-label="${window.siyuan.languages.startRecord}"><svg><use xlink:href="#iconRecord"></use></svg></button>
 <button class="block__icon fn__flex-center ariaLabel" data-type="doc" aria-label="${isMac() ? window.siyuan.languages.gutterTip2 : window.siyuan.languages.gutterTip2.replace("⇧", "Shift+")}"><svg><use xlink:href="#iconFile"></use></svg></button>
 <button class="block__icon fn__flex-center ariaLabel" data-type="more" aria-label="${window.siyuan.languages.more}"><svg><use xlink:href="#iconMore"></use></svg></button>
 <button class="block__icon fn__flex-center fn__none ariaLabel" data-type="context" aria-label="${window.siyuan.languages.context}"><svg><use xlink:href="#iconAlignCenter"></use></svg></button>`;
@@ -114,6 +115,11 @@ ${padHTML}
                     break;
                 } else if (type === "readonly") {
                     updateReadonly(target, protyle);
+                    event.stopPropagation();
+                    event.preventDefault();
+                    break;
+                } else if (type === "record") {
+                    this.handleRecordClick(protyle, target);
                     event.stopPropagation();
                     event.preventDefault();
                     break;
@@ -190,13 +196,70 @@ ${padHTML}
 <span class="fn__flex-center">${window.siyuan.languages.recording}</span><span class="fn__space"></span>
 <button class="b3-button b3-button--white">${window.siyuan.languages.endRecord}</button></div>`, -1);
         document.querySelector(`#message [data-id="${this.messageId}"] button`).addEventListener("click", () => {
-            this.mediaRecorder.stopRecording();
-            hideMessage(this.messageId);
-            const file: File = new File([this.mediaRecorder.buildWavFileBlob()],
-                `record${(new Date()).getTime()}.wav`, {type: "video/webm"});
-            uploadFiles(protyle, [file]);
+            this.stopRecordingAndUpload(protyle);
         });
         this.mediaRecorder.startRecordingNewWavFile();
+    }
+
+    private stopRecordingAndUpload(protyle: IProtyle) {
+        this.mediaRecorder.stopRecording();
+        hideMessage(this.messageId);
+        const file: File = new File([this.mediaRecorder.buildWavFileBlob()],
+            `record${(new Date()).getTime()}.wav`, {type: "video/webm"});
+        uploadFiles(protyle, [file]);
+    }
+
+    private async handleRecordClick(protyle: IProtyle, targetElement: HTMLElement) {
+        /// #if !BROWSER
+        if (window.siyuan.config.system.os === "darwin") {
+            const status = await ipcRenderer.invoke(Constants.SIYUAN_GET, {cmd: "getMicrophone"});
+            if (["denied", "restricted", "unknown"].includes(status)) {
+                showMessage(window.siyuan.languages.microphoneDenied);
+                return;
+            } else if (status === "not-determined") {
+                const isAccess = await ipcRenderer.invoke(Constants.SIYUAN_GET, {cmd: "askMicrophone"});
+                if (!isAccess) {
+                    showMessage(window.siyuan.languages.microphoneNotAccess);
+                    return;
+                }
+            }
+        }
+        /// #endif
+
+        if (this.mediaRecorder?.isRecording) {
+            this.stopRecordingAndUpload(protyle);
+        } else {
+            if (!this.mediaRecorder) {
+                navigator.mediaDevices.getUserMedia({audio: true}).then((mediaStream: MediaStream) => {
+                    this.mediaRecorder = new RecordMedia(mediaStream);
+                    this.mediaRecorder.recorder.onaudioprocess = (e: AudioProcessingEvent) => {
+                        // Do nothing if not recording:
+                        if (!this.mediaRecorder.isRecording) {
+                            return;
+                        }
+                        // Copy the data from the input buffers;
+                        const left = e.inputBuffer.getChannelData(0);
+                        const right = e.inputBuffer.getChannelData(1);
+                        this.mediaRecorder.cloneChannelData(left, right);
+                    };
+                    this.startRecord(protyle);
+                }).catch(() => {
+                    showMessage(window.siyuan.languages["record-tip"]);
+                });
+            } else {
+                hideMessage(this.messageId);
+                this.startRecord(protyle);
+            }
+        }
+
+        // 更新按钮状态
+        this.updateRecordButtonState(targetElement);
+    }
+
+    private updateRecordButtonState(targetElement: HTMLElement) {
+        const isRecording = this.mediaRecorder?.isRecording;
+        targetElement.setAttribute("aria-label", isRecording ? window.siyuan.languages.endRecord : window.siyuan.languages.startRecord);
+        targetElement.classList.toggle("block__icon--active", isRecording);
     }
 
     private genMobileMenu(protyle: IProtyle) {
@@ -281,62 +344,6 @@ ${padHTML}
                     window.siyuan.menus.menu.remove();
                 });
                 window.siyuan.menus.menu.append(uploadMenu);
-                if (!isInAndroid() && !isInHarmony()) {
-                    window.siyuan.menus.menu.append(new MenuItem({
-                        id: this.mediaRecorder?.isRecording ? "endRecord" : "startRecord",
-                        current: this.mediaRecorder && this.mediaRecorder.isRecording,
-                        icon: "iconRecord",
-                        label: this.mediaRecorder?.isRecording ? window.siyuan.languages.endRecord : window.siyuan.languages.startRecord,
-                        click: async () => {
-                            /// #if !BROWSER
-                            if (window.siyuan.config.system.os === "darwin") {
-                                const status = await ipcRenderer.invoke(Constants.SIYUAN_GET, {cmd: "getMicrophone"});
-                                if (["denied", "restricted", "unknown"].includes(status)) {
-                                    showMessage(window.siyuan.languages.microphoneDenied);
-                                    return;
-                                } else if (status === "not-determined") {
-                                    const isAccess = await ipcRenderer.invoke(Constants.SIYUAN_GET, {cmd: "askMicrophone"});
-                                    if (!isAccess) {
-                                        showMessage(window.siyuan.languages.microphoneNotAccess);
-                                        return;
-                                    }
-                                }
-                            }
-                            /// #endif
-
-                            if (!this.mediaRecorder) {
-                                navigator.mediaDevices.getUserMedia({audio: true}).then((mediaStream: MediaStream) => {
-                                    this.mediaRecorder = new RecordMedia(mediaStream);
-                                    this.mediaRecorder.recorder.onaudioprocess = (e: AudioProcessingEvent) => {
-                                        // Do nothing if not recording:
-                                        if (!this.mediaRecorder.isRecording) {
-                                            return;
-                                        }
-                                        // Copy the data from the input buffers;
-                                        const left = e.inputBuffer.getChannelData(0);
-                                        const right = e.inputBuffer.getChannelData(1);
-                                        this.mediaRecorder.cloneChannelData(left, right);
-                                    };
-                                    this.startRecord(protyle);
-                                }).catch(() => {
-                                    showMessage(window.siyuan.languages["record-tip"]);
-                                });
-                                return;
-                            }
-
-                            if (this.mediaRecorder.isRecording) {
-                                this.mediaRecorder.stopRecording();
-                                hideMessage(this.messageId);
-                                const file: File = new File([this.mediaRecorder.buildWavFileBlob()],
-                                    `record${(new Date()).getTime()}.wav`, {type: "video/webm"});
-                                uploadFiles(protyle, [file]);
-                            } else {
-                                hideMessage(this.messageId);
-                                this.startRecord(protyle);
-                            }
-                        }
-                    }).element);
-                }
             }
             if (!protyle.disabled) {
                 window.siyuan.menus.menu.append(new MenuItem({
