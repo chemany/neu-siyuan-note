@@ -209,10 +209,13 @@ export class MeetingManager {
     private insertTranscriptionToEditor(data: { transcription: string, summary: string }) {
         if (!data.transcription) return;
 
+        // 过滤大模型的思考过程 <think>...</think>
+        const cleanSummary = data.summary.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
+        const cleanTranscription = data.transcription.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
+
         // 构建更具 AI 专业感的 HTML 内容
         const timeStr = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
 
-        // 使用思源内置的特定样式类（如 b3-list 等）或者自定义样式
         const content = `
 <div style="margin-bottom: 16px; border: 1px solid var(--b3-border-color); border-radius: 8px; padding: 12px; background: var(--b3-theme-surface);">
     <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px; border-bottom: 1px solid var(--b3-border-color); padding-bottom: 4px;">
@@ -221,17 +224,17 @@ export class MeetingManager {
     </div>
     <div style="margin-bottom: 12px;">
         <div style="font-size: 12px; font-weight: bold; opacity: 0.7; margin-bottom: 4px;">🎯 核心摘要</div>
-        <div style="font-size: 14px; line-height: 1.6;">${data.summary}</div>
+        <div style="font-size: 14px; line-height: 1.6;">${cleanSummary}</div>
     </div>
     <details>
         <summary style="font-size: 12px; opacity: 0.5; cursor: pointer;">查看转录原文</summary>
-        <div style="font-size: 13px; opacity: 0.8; margin-top: 8px; white-space: pre-wrap;">${data.transcription}</div>
+        <div style="font-size: 13px; opacity: 0.8; margin-top: 8px; white-space: pre-wrap;">${cleanTranscription}</div>
     </details>
 </div>
 `;
 
         const event = new CustomEvent("neura-meeting-transcription", { detail: content });
         window.dispatchEvent(event);
-        showMessage("AI 转录已生成并插入文档", 3000);
+        showMessage("AI 转录已实时同步");
     }
 }

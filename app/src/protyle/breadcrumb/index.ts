@@ -124,11 +124,6 @@ ${padHTML}
                     break;
                 } else if (type === "record") {
                     this.handleAIRecordClick(protyle, target);
-                    target.oncontextmenu = (e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        this.showMeetingSettings(protyle);
-                    };
                     event.stopPropagation();
                     event.preventDefault();
                     break;
@@ -183,6 +178,19 @@ ${padHTML}
                     }
                     event.preventDefault();
                     event.stopPropagation();
+                    break;
+                }
+                target = target.parentElement;
+            }
+        });
+        element.addEventListener("contextmenu", (event) => {
+            let target = event.target as HTMLElement;
+            while (target && !target.isEqualNode(element)) {
+                const type = target.getAttribute("data-type");
+                if (type === "record") {
+                    this.showMeetingSettings(protyle);
+                    event.stopPropagation();
+                    event.preventDefault();
                     break;
                 }
                 target = target.parentElement;
@@ -694,7 +702,7 @@ ${padHTML}
                     const id = Lute.NewNodeID();
                     const html = `<div data-node-id="${id}" data-type="NodeBlockquote" class="bq">${content}</div>`;
 
-                    // 默认追加到文档末尾，或者当前聚焦块之后
+                    // 1. 同步到内核 (持久化)
                     transaction(protyle, [{
                         action: "insert",
                         data: html,
@@ -704,13 +712,18 @@ ${padHTML}
                         action: "delete",
                         id: id,
                     }]);
-                    // 自动聚焦
+
+                    // 2. 实时插入 DOM (即时效果，无需刷新)
+                    protyle.wysiwyg.element.insertAdjacentHTML("beforeend", html);
+
+                    // 3. 自动滚动到新插入的内容并聚焦
                     setTimeout(() => {
                         const newElement = protyle.wysiwyg.element.querySelector(`[data-node-id="${id}"]`);
                         if (newElement) {
+                            newElement.scrollIntoView({ behavior: 'smooth', block: 'end' });
                             focusByRange(getEditorRange(newElement));
                         }
-                    }, 200);
+                    }, 100);
                 }
             };
 

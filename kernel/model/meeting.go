@@ -140,17 +140,34 @@ func (s *MeetingService) GenerateSummary(text string) (string, error) {
 	apiKey := "vllm-token"
 	modelName := "tclf90/Qwen3-32B-GPTQ-Int4"
 
-	prompt := fmt.Sprintf("你是一个专业的会议速记员和摘要助手。请对以下会议转录文本进行深度整理：\n1. 修正明显的语音识别错误。\n2. 总结核心要点和决策事项。\n3. 使用明晰的中文列表呈现。\n\n待处理文本：\n%s", text)
+	// 强制示例（Few-Shot），让 AI 明白什么叫“极简”
+	prompt := fmt.Sprintf(`你是思源笔记的会议纪要插件，严禁输出任何废话。
+
+### 输出规范：
+1. 严禁任何开场白（如“好的”、“收到”、“首先”）。
+2. 严禁任何思考过程。
+3. 仅输出以下两行内容，不准多出一个字：
+> **正在讨论**：[话题概括]
+> **结论/行动**：[决定事项]
+
+### 示例：
+输入：大家觉得这个项目下周一上线怎么样？我觉得没问题，那就这么定了。
+输出：
+> **正在讨论**：项目上线时间安排
+> **结论/行动**：确认项目于下周一正式上线。
+
+### 待处理文本：
+%s`, text)
 
 	payload := map[string]interface{}{
 		"model": modelName,
 		"messages": []map[string]string{
-			{"role": "system", "content": "你是思源笔记的AI助手，专门帮助用户整理知识、建立概念关联和生成智能摘要。"},
+			{"role": "system", "content": "You are a professional stenographer. Output ONLY the summary block. NO preamble, NO conversation."},
 			{"role": "user", "content": prompt},
 		},
 		"stream":      false,
-		"temperature": 0.7,
-		"max_tokens":  1000,
+		"temperature": 0.1, // 进一步压低随机性，使其完全模仿示例
+		"max_tokens":  200,
 	}
 
 	jsonPayload, _ := json.Marshal(payload)
@@ -163,7 +180,7 @@ func (s *MeetingService) GenerateSummary(text string) (string, error) {
 		req.Header.Set("Authorization", "Bearer "+apiKey)
 	}
 
-	client := &http.Client{Timeout: 120 * time.Second}
+	client := &http.Client{Timeout: 60 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
 		logging.LogErrorf("Failed to call LLM service at %s: %v", llmURL, err)
