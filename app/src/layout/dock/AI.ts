@@ -214,9 +214,9 @@ export class AI extends Model {
         // 获取当前激活的编辑器 - 使用多种方法确保能获取到
         const models = getAllModels();
         console.log("[AI] 编辑器总数:", models.editor.length);
-        
+
         let activeEditor = null;
-        
+
         // 方法1: 查找焦点编辑器 (item--focus)
         activeEditor = models.editor.find(item =>
             item.parent?.headElement?.classList.contains("item--focus")
@@ -224,7 +224,7 @@ export class AI extends Model {
         if (activeEditor) {
             console.log("[AI] 方法1找到焦点编辑器");
         }
-        
+
         // 方法2: 查找 fn__flex-1--focus 类
         if (!activeEditor) {
             activeEditor = models.editor.find(item =>
@@ -234,7 +234,7 @@ export class AI extends Model {
                 console.log("[AI] 方法2找到焦点编辑器");
             }
         }
-        
+
         // 方法3: 查找包含 data-activetime 最新的编辑器
         if (!activeEditor && models.editor.length > 0) {
             let latestTime = 0;
@@ -249,7 +249,7 @@ export class AI extends Model {
                 console.log("[AI] 方法3找到最近活动的编辑器");
             }
         }
-        
+
         // 方法4: 直接使用第一个编辑器
         if (!activeEditor && models.editor.length > 0) {
             activeEditor = models.editor[0];
@@ -301,7 +301,7 @@ export class AI extends Model {
             // 例如: assets/1210保障线汇报记录-20251223091526-xt9p3ts.pdf
             // OCR文件: assets/1210保障线汇报记录-20251223091526-xt9p3ts.pdf.ocr.json
             const ocrJsonPath = `${pdfPath}.ocr.json`;
-            
+
             console.log(`[AI] 检查OCR文件: ${ocrJsonPath} (对应PDF: ${pdfPath})`);
             return ocrJsonPath;
         };
@@ -400,7 +400,7 @@ export class AI extends Model {
                     console.log("[AI] 读取OCR JSON文件:", path);
                     // 从OCR JSON文件路径提取原始PDF路径
                     const pdfPath = path.replace('.ocr.json', '');
-                    
+
                     const result = await fetchSyncPost('/api/ai/getOCRResult', {
                         assetPath: pdfPath
                     });
@@ -408,12 +408,12 @@ export class AI extends Model {
                     if (result.code === 0 && result.data) {
                         const fullText = result.data.fullText || "";
                         const fileName = path.split('/').pop()?.replace('.ocr.json', '') || path;
-                        
+
                         // 限制每个附件内容长度
                         const content = fullText.length > 5000
                             ? fullText.substring(0, 5000) + "...(内容已截断)"
                             : fullText;
-                        
+
                         attachmentContent += `\n\n--- OCR文档: ${fileName} ---\n${content}`;
                         console.log("[AI] 成功读取OCR JSON文件，内容长度:", content.length);
                     } else {
@@ -455,55 +455,56 @@ export class AI extends Model {
 
         // 调试日志
         console.log("[AI] callAI被调用，docContent长度:", docContent?.length || 0);
-        console.log("[AI] docContent内容预览:", docContent?.substring(0, 200));
 
         // 获取并解析附件内容
         const attachments = this.getDocumentAttachments();
-        console.log("[AI] 找到附件数量:", attachments.length, attachments);
-        
         let attachmentContent = "";
         if (attachments.length > 0) {
             attachmentContent = await this.parseAttachments(attachments);
-            console.log("[AI] 附件解析内容长度:", attachmentContent?.length || 0);
         }
 
-        // 构建系统消息，确保文档本身内容优先
+        // 1. 构建系统消息（始终放在第一条）
         let systemContent = "";
-        
-        // 1. 首先添加文档本身的文字内容（优先级最高）
         if (docContent && docContent.trim()) {
-            const docMaxLength = 4000; // 文档内容最多4000字符
-            systemContent += `【文档正文内容】\n${docContent.substring(0, docMaxLength)}${docContent.length > docMaxLength ? '...(正文已截断)' : ''}\n`;
-            console.log("[AI] 已添加文档正文内容");
-        } else {
-            console.log("[AI] 警告：文档正文内容为空！");
+            const docMaxLength = 4000;
+            systemContent += `【文档正文内容】\n${docContent.substring(0, docMaxLength)}${docContent.length > docMaxLength ? "...(正文已截断)" : ""}\n`;
         }
-        
-        // 2. 然后添加附件内容
+
         if (attachmentContent) {
-            const attachMaxLength = 4000; // 附件内容最多4000字符
-            const truncatedAttachment = attachmentContent.length > attachMaxLength 
+            const attachMaxLength = 4000;
+            const truncatedAttachment = attachmentContent.length > attachMaxLength
                 ? attachmentContent.substring(0, attachMaxLength) + "...(附件内容已截断)"
                 : attachmentContent;
             systemContent += `\n【文档附件内容】${truncatedAttachment}`;
-            console.log("[AI] 已添加附件内容");
         }
 
         if (systemContent.trim()) {
-            const systemMsg = `你是一个文档分析助手。请基于以下内容回答用户问题。\n\n${systemContent}`;
             messages.push({
                 role: "system",
-                content: systemMsg
+                content: `你是一个文档分析助手。请基于提供的文档内容及之前的对话历史，回答用户问题。如果用户要求进行多轮迭代总结，请结合之前的对话背景进行。\n\n${systemContent}`
             });
-            console.log("[AI] System消息:", systemMsg);
         }
 
-        messages.push({
-            role: "user",
-            content: question
+        // 2. 添加历史消息（从 this.messages 中获取，并过滤掉助理回复中的思考过程）
+        // handleSend 中先添加了用户消息，然后添加了 "正在思考中" 的占位符
+        // 因此我们要取占位符之前的所有消息作为上下文
+        const history = this.messages.slice(0, -1);
+        history.forEach((msg) => {
+            let content = msg.content;
+            if (msg.role === "assistant") {
+                // 过滤掉历史回复中的思考部分，避免干扰上下文并节省 token
+                content = content.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
+                content = content.replace(/<think>[\s\S]*/g, "").trim();
+            }
+            if (content) {
+                messages.push({
+                    role: msg.role,
+                    content: content
+                });
+            }
         });
-        
-        console.log("[AI] 发送给AI的完整消息:", JSON.stringify(messages, null, 2));
+
+        console.log("[AI] 发送给AI的完整消息条数:", messages.length);
 
         // 使用流式 API
         return this.callAIStream(messages);
@@ -513,10 +514,10 @@ export class AI extends Model {
     private async callAIStream(messages: any[]): Promise<string> {
         return new Promise((resolve, reject) => {
             let fullContent = "";
-            
+
             // 获取认证 token
             const token = localStorage.getItem("siyuan_token") || "";
-            
+
             fetch('/api/ai/chatStream', {
                 method: 'POST',
                 headers: {
@@ -530,24 +531,24 @@ export class AI extends Model {
                 if (!response.ok) {
                     throw new Error(`HTTP error! status: ${response.status}`);
                 }
-                
+
                 const reader = response.body?.getReader();
                 if (!reader) {
                     throw new Error("无法获取响应流");
                 }
-                
+
                 const decoder = new TextDecoder();
-                
+
                 const readStream = () => {
                     reader.read().then(({ done, value }) => {
                         if (done) {
                             resolve(fullContent || "AI 没有返回内容");
                             return;
                         }
-                        
+
                         const chunk = decoder.decode(value, { stream: true });
                         const lines = chunk.split('\n');
-                        
+
                         for (const line of lines) {
                             if (line.startsWith('data: ')) {
                                 try {
@@ -570,11 +571,11 @@ export class AI extends Model {
                                 }
                             }
                         }
-                        
+
                         readStream();
                     }).catch(reject);
                 };
-                
+
                 readStream();
             }).catch(reject);
         });
@@ -584,7 +585,7 @@ export class AI extends Model {
     private updateStreamingMessage(content: string) {
         const messagesContainer = this.element.querySelector('[data-type="messages"]');
         if (!messagesContainer) return;
-        
+
         // 查找最后一条 AI 消息并更新
         const lastMessage = messagesContainer.lastElementChild;
         if (lastMessage) {
@@ -657,15 +658,46 @@ export class AI extends Model {
     }
 
     private escapeHtml(text: string): string {
-        // 支持简单的markdown格式
-        return text
-            .replace(/&/g, "&amp;")
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;")
-            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-            .replace(/\*(.*?)\*/g, '<em>$1</em>')
-            .replace(/`(.*?)`/g, '<code style="background: var(--b3-theme-surface-lighter); padding: 2px 4px; border-radius: 2px;">$1</code>')
-            .replace(/\n/g, '<br>');
+        // 处理 <think> 标签，将其分离出来单独显示
+        let content = text;
+        let thinkContent = "";
+
+        const thinkMatch = content.match(/<think>([\s\S]*?)<\/think>/);
+        if (thinkMatch) {
+            thinkContent = thinkMatch[1];
+            content = content.replace(/<think>[\s\S]*?<\/think>/, "");
+        } else {
+            // 处理未闭合的标签（流式传输中）
+            const partialThinkMatch = content.match(/<think>([\s\S]*)/);
+            if (partialThinkMatch) {
+                thinkContent = partialThinkMatch[1];
+                content = content.replace(/<think>[\s\S]*/, "");
+            }
+        }
+
+        const escapePart = (t: string) => {
+            return t.replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
+                .replace(/\*(.*?)\*/g, "<em>$1</em>")
+                .replace(/`(.*?)`/g, '<code style="background: var(--b3-theme-surface-lighter); padding: 2px 4px; border-radius: 2px;">$1</code>')
+                .replace(/\n/g, "<br>");
+        };
+
+        let result = escapePart(content.trim());
+        if (thinkContent) {
+            const escapedThink = escapePart(thinkContent.trim());
+            const thinkHtml = `<div class="ai-thought" style="margin-bottom: 8px; border-left: 2px solid var(--b3-theme-surface-lighter); padding-left: 8px; font-size: 12px; color: var(--b3-theme-on-surface-light); opacity: 0.8;">
+                <div style="font-weight: bold; margin-bottom: 2px; display: flex; align-items: center; opacity: 0.6;">
+                    <svg style="width: 12px; height: 12px; margin-right: 4px;"><use xlink:href="#iconSparkles"></use></svg>思考过程
+                </div>
+                <div style="font-style: italic;">${escapedThink}</div>
+            </div>`;
+            result = thinkHtml + result;
+        }
+
+        return result;
     }
 
     private saveToNote() {
@@ -686,8 +718,21 @@ export class AI extends Model {
             const lastBlock = protyle.wysiwyg.element.lastElementChild;
 
             if (lastBlock) {
+                // 提取非思考部分的内容
+                let cleanContent = lastAIMessage.content;
+                // 移除完整的 <think>...</think> 块
+                cleanContent = cleanContent.replace(/<think>[\s\S]*?<\/think>/g, "");
+                // 移除可能存在的未闭合 <think> 标签及其后续内容
+                cleanContent = cleanContent.replace(/<think>[\s\S]*/g, "");
+                cleanContent = cleanContent.trim();
+
+                if (!cleanContent) {
+                    window.siyuan.showMessage?.("AI 还没有生成正式回复", 3000, "info");
+                    return;
+                }
+
                 // 准备要插入的内容
-                const insertContent = `\n\n---\n\n## 🤖 AI 分析结果\n\n${lastAIMessage.content}\n\n*生成时间：${new Date(lastAIMessage.timestamp).toLocaleString()}*\n`;
+                const insertContent = `\n\n---\n\n## 🤖 AI 分析结果\n\n${cleanContent}\n\n*生成时间：${new Date(lastAIMessage.timestamp).toLocaleString()}*\n`;
 
                 // 使用 insertHTML 插入内容
                 const htmlContent = protyle.lute.Md2BlockDOM(insertContent);

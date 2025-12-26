@@ -13,7 +13,9 @@ cd /root/code/NeuraLink-Notes
 # 1. 构建前端 (使用 desktop 构建，Web版访问 /stage/build/desktop/)
 echo "📦 [1/3] 构建前端 (desktop)..."
 cd app
-npm run build:desktop
+# 限制 Node 内存，降低优先级，防止抢占 SSH 资源
+export NODE_OPTIONS="--max-old-space-size=2048"
+nice -n 19 npm run build:desktop
 if [ $? -ne 0 ]; then
     echo "❌ 前端构建失败！"
     exit 1
@@ -21,17 +23,25 @@ fi
 echo "✅ 前端构建成功 (输出目录: stage/build/desktop/)"
 echo ""
 
+# 释放内存缓冲
+sync
+sleep 2
+
 # 2. 构建后端
 echo "🔧 [2/3] 构建后端..."
 cd ../kernel
 go mod tidy
-CGO_ENABLED=1 go build -v -o siyuan-kernel -tags "fts5" -ldflags "-s -w" .
+# 限制 Go 编译并发核心数为 2，降低优先级
+CGO_ENABLED=1 nice -n 19 go build -p 2 -v -o siyuan-kernel -tags "fts5" -ldflags "-s -w" .
 if [ $? -ne 0 ]; then
     echo "❌ 后端构建失败！"
     exit 1
 fi
 echo "✅ 后端构建成功"
 echo ""
+
+sync
+sleep 2
 
 # 3. 重启服务
 echo "🔄 [3/3] 重启服务..."

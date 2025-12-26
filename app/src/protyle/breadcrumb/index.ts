@@ -1,44 +1,48 @@
-import {getIconByType} from "../../editor/getIcon";
-import {fetchPost} from "../../util/fetch";
-import {Constants} from "../../constants";
-import {MenuItem} from "../../menus/Menu";
-import {fullscreen, net2LocalAssets, updateReadonly} from "./action";
-import {openFileAttr} from "../../menus/commonMenuItem";
-import {setEditMode} from "../util/setEditMode";
-import {RecordMedia} from "../util/RecordMedia";
-import {hideMessage, showMessage} from "../../dialog/message";
-import {uploadFiles} from "../upload";
-import {hasClosestBlock, hasTopClosestByClassName} from "../util/hasClosest";
-import {needSubscribe} from "../../util/needSubscribe";
-import {isMobile} from "../../util/functions";
-import {zoomOut} from "../../menus/protyle";
-import {getEditorRange} from "../util/selection";
+import { getIconByType } from "../../editor/getIcon";
+import { fetchPost } from "../../util/fetch";
+import { Constants } from "../../constants";
+import { MenuItem } from "../../menus/Menu";
+import { fullscreen, net2LocalAssets, updateReadonly } from "./action";
+import { openFileAttr } from "../../menus/commonMenuItem";
+import { setEditMode } from "../util/setEditMode";
+import { RecordMedia } from "../util/RecordMedia";
+import { hideMessage, showMessage } from "../../dialog/message";
+import { uploadFiles } from "../upload";
+import { MeetingManager, IMeetingStatus } from "../../meeting/MeetingManager";
+import { transaction } from "../wysiwyg/transaction";
+import { focusByRange } from "../util/selection";
+import { hasClosestBlock, hasTopClosestByClassName } from "../util/hasClosest";
+import { needSubscribe } from "../../util/needSubscribe";
+import { isMobile } from "../../util/functions";
+import { zoomOut } from "../../menus/protyle";
+import { getEditorRange } from "../util/selection";
 /// #if !MOBILE
-import {openFileById} from "../../editor/util";
-import {saveLayout} from "../../layout/util";
+import { openFileById } from "../../editor/util";
+import { saveLayout } from "../../layout/util";
 /// #endif
 /// #if !BROWSER
-import {ipcRenderer} from "electron";
+import { ipcRenderer } from "electron";
 /// #endif
-import {onGet} from "../util/onGet";
-import {hideElements} from "../ui/hideElements";
-import {confirmDialog} from "../../dialog/confirmDialog";
-import {reloadProtyle} from "../util/reload";
-import {Menu} from "../../plugin/Menu";
-import {getNoContainerElement} from "../wysiwyg/getBlock";
-import {openTitleMenu} from "../header/openTitleMenu";
-import {emitOpenMenu} from "../../plugin/EventBus";
-import {isInAndroid, isInHarmony, isIPad, isMac, updateHotkeyTip} from "../util/compatibility";
-import {resize} from "../util/resize";
-import {listIndent, listOutdent} from "../wysiwyg/list";
-import {improveBreadcrumbAppearance} from "../wysiwyg/renderBacklink";
-import {getCloudURL} from "../../config/util/about";
+import { onGet } from "../util/onGet";
+import { hideElements } from "../ui/hideElements";
+import { confirmDialog } from "../../dialog/confirmDialog";
+import { reloadProtyle } from "../util/reload";
+import { Menu } from "../../plugin/Menu";
+import { getNoContainerElement } from "../wysiwyg/getBlock";
+import { openTitleMenu } from "../header/openTitleMenu";
+import { emitOpenMenu } from "../../plugin/EventBus";
+import { isInAndroid, isInHarmony, isIPad, isMac, updateHotkeyTip } from "../util/compatibility";
+import { resize } from "../util/resize";
+import { listIndent, listOutdent } from "../wysiwyg/list";
+import { improveBreadcrumbAppearance } from "../wysiwyg/renderBacklink";
+import { getCloudURL } from "../../config/util/about";
 
 export class Breadcrumb {
     public element: HTMLElement;
     private mediaRecorder: RecordMedia;
     private id: string;
     private messageId: string;
+    private indicatorElement: HTMLElement | null = null;
 
     constructor(protyle: IProtyle) {
         const element = document.createElement("div");
@@ -59,7 +63,7 @@ export class Breadcrumb {
 <button class="protyle-breadcrumb__icon fn__none ariaLabel" aria-label="${updateHotkeyTip(window.siyuan.config.keymap.editor.general.exitFocus.custom)}" data-type="exit-focus">${window.siyuan.languages.exitFocus}</button>
 ${padHTML}
 <button class="block__icon fn__flex-center ariaLabel${window.siyuan.config.readonly ? " fn__none" : ""}" aria-label="${window.siyuan.languages.lockEdit}" data-type="readonly" data-subtype="unlock"><svg><use xlink:href="#iconUnlock"></use></svg></button>
-<button class="block__icon fn__flex-center ariaLabel" data-type="record" aria-label="${window.siyuan.languages.startRecord}"><svg><use xlink:href="#iconRecord"></use></svg></button>
+<button class="block__icon fn__flex-center ariaLabel" data-type="record" aria-label="AI 会议纪要 (左键开始/停止，右键设置)"><svg><use xlink:href="#iconRecord"></use></svg></button>
 <button class="block__icon fn__flex-center ariaLabel" data-type="doc" aria-label="${isMac() ? window.siyuan.languages.gutterTip2 : window.siyuan.languages.gutterTip2.replace("⇧", "Shift+")}"><svg><use xlink:href="#iconFile"></use></svg></button>
 <button class="block__icon fn__flex-center ariaLabel" data-type="more" aria-label="${window.siyuan.languages.more}"><svg><use xlink:href="#iconMore"></use></svg></button>
 <button class="block__icon fn__flex-center fn__none ariaLabel" data-type="context" aria-label="${window.siyuan.languages.context}"><svg><use xlink:href="#iconAlignCenter"></use></svg></button>`;
@@ -78,7 +82,7 @@ ${padHTML}
                             action: id === protyle.block.rootID ? [Constants.CB_GET_FOCUS] : [Constants.CB_GET_FOCUS, Constants.CB_GET_ALL]
                         });
                     } else {
-                        zoomOut({protyle, id});
+                        zoomOut({ protyle, id });
                     }
                     /// #endif
                     event.preventDefault();
@@ -98,7 +102,7 @@ ${padHTML}
                         });
                     } else {
                         const targetRect = target.getBoundingClientRect();
-                        openTitleMenu(protyle, {x: targetRect.right, y: targetRect.bottom, isLeft: true}, Constants.MENU_FROM_TITLE_BREADCRUMB);
+                        openTitleMenu(protyle, { x: targetRect.right, y: targetRect.bottom, isLeft: true }, Constants.MENU_FROM_TITLE_BREADCRUMB);
                     }
                     event.stopPropagation();
                     event.preventDefault();
@@ -119,12 +123,17 @@ ${padHTML}
                     event.preventDefault();
                     break;
                 } else if (type === "record") {
-                    this.handleRecordClick(protyle, target);
+                    this.handleAIRecordClick(protyle, target);
+                    target.oncontextmenu = (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        this.showMeetingSettings(protyle);
+                    };
                     event.stopPropagation();
                     event.preventDefault();
                     break;
                 } else if (type === "exit-focus") {
-                    zoomOut({protyle, id: protyle.block.rootID, focusId: protyle.block.id});
+                    zoomOut({ protyle, id: protyle.block.rootID, focusId: protyle.block.id });
                     event.stopPropagation();
                     event.preventDefault();
                     break;
@@ -132,7 +141,7 @@ ${padHTML}
                     event.stopPropagation();
                     event.preventDefault();
                     if (target.classList.contains("block__icon--active")) {
-                        zoomOut({protyle, id: protyle.options.blockId});
+                        zoomOut({ protyle, id: protyle.options.blockId });
                         target.classList.remove("block__icon--active");
                     } else {
                         fetchPost("/api/filetree/getDoc", {
@@ -140,7 +149,7 @@ ${padHTML}
                             mode: 3,
                             size: window.siyuan.config.editor.dynamicLoadBlocks,
                         }, getResponse => {
-                            onGet({data: getResponse, protyle, action: [Constants.CB_GET_HL]});
+                            onGet({ data: getResponse, protyle, action: [Constants.CB_GET_HL] });
                         });
                         target.classList.add("block__icon--active");
                     }
@@ -187,7 +196,7 @@ ${padHTML}
         });
         this.element.addEventListener("mousewheel", (event: WheelEvent) => {
             this.element.scrollLeft = this.element.scrollLeft + event.deltaY;
-        }, {passive: true});
+        }, { passive: true });
         /// #endif
     }
 
@@ -205,19 +214,20 @@ ${padHTML}
         this.mediaRecorder.stopRecording();
         hideMessage(this.messageId);
         const file: File = new File([this.mediaRecorder.buildWavFileBlob()],
-            `record${(new Date()).getTime()}.wav`, {type: "video/webm"});
+            `record${(new Date()).getTime()}.wav`, { type: "video/webm" });
         uploadFiles(protyle, [file]);
     }
 
     private async handleRecordClick(protyle: IProtyle, targetElement: HTMLElement) {
+        console.log("NEURALINK_BREADCRUMB_RECORD_CLICKED");
         /// #if !BROWSER
         if (window.siyuan.config.system.os === "darwin") {
-            const status = await ipcRenderer.invoke(Constants.SIYUAN_GET, {cmd: "getMicrophone"});
+            const status = await ipcRenderer.invoke(Constants.SIYUAN_GET, { cmd: "getMicrophone" });
             if (["denied", "restricted", "unknown"].includes(status)) {
                 showMessage(window.siyuan.languages.microphoneDenied);
                 return;
             } else if (status === "not-determined") {
-                const isAccess = await ipcRenderer.invoke(Constants.SIYUAN_GET, {cmd: "askMicrophone"});
+                const isAccess = await ipcRenderer.invoke(Constants.SIYUAN_GET, { cmd: "askMicrophone" });
                 if (!isAccess) {
                     showMessage(window.siyuan.languages.microphoneNotAccess);
                     return;
@@ -230,7 +240,7 @@ ${padHTML}
             this.stopRecordingAndUpload(protyle);
         } else {
             if (!this.mediaRecorder) {
-                navigator.mediaDevices.getUserMedia({audio: true}).then((mediaStream: MediaStream) => {
+                navigator.mediaDevices.getUserMedia({ audio: true }).then((mediaStream: MediaStream) => {
                     this.mediaRecorder = new RecordMedia(mediaStream);
                     this.mediaRecorder.recorder.onaudioprocess = (e: AudioProcessingEvent) => {
                         // Do nothing if not recording:
@@ -277,7 +287,7 @@ ${padHTML}
             blockElement = getNoContainerElement(protyle.wysiwyg.element.firstElementChild) || protyle.wysiwyg.element.firstElementChild;
         }
         const id = blockElement.getAttribute("data-node-id");
-        fetchPost("/api/block/getBlockBreadcrumb", {id, excludeTypes: []}, (response) => {
+        fetchPost("/api/block/getBlockBreadcrumb", { id, excludeTypes: [] }, (response) => {
             response.data.forEach((item: IBreadcrumb) => {
                 let isCurrent = false;
                 if (!protyle.block.showAll && item.id === protyle.block.parentID) {
@@ -290,7 +300,7 @@ ${padHTML}
                     icon: getIconByType(item.type, item.subType),
                     label: item.name,
                     click() {
-                        zoomOut({protyle, id: item.id});
+                        zoomOut({ protyle, id: item.id });
                     }
                 });
             });
@@ -318,7 +328,7 @@ ${padHTML}
         if (cursorNodeElement) {
             id = cursorNodeElement.getAttribute("data-node-id");
         }
-        fetchPost("/api/block/getTreeStat", {id: id || (protyle.block.showAll ? protyle.block.id : protyle.block.rootID)}, (response) => {
+        fetchPost("/api/block/getTreeStat", { id: id || (protyle.block.showAll ? protyle.block.id : protyle.block.rootID) }, (response) => {
             window.siyuan.menus.menu.remove();
             window.siyuan.menus.menu.element.setAttribute("data-name", Constants.MENU_BREADCRUMB_MORE);
             if (!protyle.contentElement.classList.contains("fn__none") && !protyle.disabled) {
@@ -371,7 +381,7 @@ ${padHTML}
                     click() {
                         if (!needSubscribe()) {
                             confirmDialog("📦 " + window.siyuan.languages.uploadAssets2CDN, window.siyuan.languages.uploadAssets2CDNConfirmTip, () => {
-                                fetchPost("/api/asset/uploadCloud", {id: protyle.block.id});
+                                fetchPost("/api/asset/uploadCloud", { id: protyle.block.id });
                             });
                         }
                     }
@@ -384,7 +394,7 @@ ${padHTML}
                         click() {
                             confirmDialog("🤩 " + window.siyuan.languages.share2Liandi,
                                 window.siyuan.languages.share2LiandiConfirmTip.replace("${accountServer}", getCloudURL("")), () => {
-                                    fetchPost("/api/export/export2Liandi", {id: protyle.block.parentID});
+                                    fetchPost("/api/export/export2Liandi", { id: protyle.block.parentID });
                                 });
                         }
                     }).element);
@@ -401,7 +411,7 @@ ${padHTML}
                 }).element);
             }
             if (window.siyuan.menus.menu.element.lastElementChild.childElementCount > 0) {
-                window.siyuan.menus.menu.append(new MenuItem({id: "separator_1", type: "separator"}).element);
+                window.siyuan.menus.menu.append(new MenuItem({ id: "separator_1", type: "separator" }).element);
             }
             window.siyuan.menus.menu.append(new MenuItem({
                 id: "refresh",
@@ -495,7 +505,7 @@ ${padHTML}
                         click() {
                             fetchPost("/api/attr/setBlockAttrs", {
                                 id: protyle.block.rootID,
-                                attrs: {[Constants.CUSTOM_SY_READONLY]: "true"}
+                                attrs: { [Constants.CUSTOM_SY_READONLY]: "true" }
                             });
                         }
                     }, {
@@ -506,7 +516,7 @@ ${padHTML}
                         click() {
                             fetchPost("/api/attr/setBlockAttrs", {
                                 id: protyle.block.rootID,
-                                attrs: {[Constants.CUSTOM_SY_READONLY]: "false"}
+                                attrs: { [Constants.CUSTOM_SY_READONLY]: "false" }
                             });
                         }
                     }]
@@ -528,7 +538,7 @@ ${padHTML}
                         click() {
                             fetchPost("/api/attr/setBlockAttrs", {
                                 id: protyle.block.rootID,
-                                attrs: {[Constants.CUSTOM_SY_FULLWIDTH]: "true"}
+                                attrs: { [Constants.CUSTOM_SY_FULLWIDTH]: "true" }
                             });
                         }
                     }, {
@@ -539,7 +549,7 @@ ${padHTML}
                         click() {
                             fetchPost("/api/attr/setBlockAttrs", {
                                 id: protyle.block.rootID,
-                                attrs: {[Constants.CUSTOM_SY_FULLWIDTH]: "false"}
+                                attrs: { [Constants.CUSTOM_SY_FULLWIDTH]: "false" }
                             });
                         }
                     }, {
@@ -550,7 +560,7 @@ ${padHTML}
                         click() {
                             fetchPost("/api/attr/setBlockAttrs", {
                                 id: protyle.block.rootID,
-                                attrs: {[Constants.CUSTOM_SY_FULLWIDTH]: ""}
+                                attrs: { [Constants.CUSTOM_SY_FULLWIDTH]: "" }
                             });
                         }
                     }]
@@ -568,7 +578,7 @@ ${padHTML}
                     separatorPosition: "top",
                 });
             }
-            window.siyuan.menus.menu.append(new MenuItem({id: "separator_2", type: "separator"}).element);
+            window.siyuan.menus.menu.append(new MenuItem({ id: "separator_2", type: "separator" }).element);
             window.siyuan.menus.menu.append(new MenuItem({
                 id: "docInfo",
                 iconHTML: "",
@@ -627,7 +637,7 @@ ${padHTML}
             // 闪卡面包屑不能显示答案
             excludeTypes.push("NodeTextMark-mark");
         }
-        fetchPost("/api/block/getBlockBreadcrumb", {id, excludeTypes}, (response) => {
+        fetchPost("/api/block/getBlockBreadcrumb", { id, excludeTypes }, (response) => {
             let html = "";
             response.data.forEach((item: IBreadcrumb, index: number) => {
                 let isCurrent = false;
@@ -656,9 +666,203 @@ ${padHTML}
         /// #endif
     }
 
+    public async handleAIRecordClick(protyle: IProtyle, targetElement: HTMLElement) {
+        const manager = MeetingManager.getInstance();
+        if (manager.isRecording) {
+            manager.stopRecording();
+            targetElement.classList.remove("block__icon--active");
+            if (this.indicatorElement) {
+                this.indicatorElement.remove();
+                this.indicatorElement = null;
+            }
+        } else {
+            await manager.startRecording(manager.getInterval());
+            targetElement.classList.add("block__icon--active");
+
+            // 设置状态回调
+            manager.setStatusCallback((status) => {
+                this.updateIndicator(status);
+            });
+
+            // 监听转录插入事件（仅在录制期间有效）
+            const handleTranscription = (e: CustomEvent) => {
+                const content = e.detail;
+                if (!content) return;
+
+                const range = protyle.toolbar?.range || getEditorRange(protyle.wysiwyg.element);
+                if (protyle.block.rootID) {
+                    const id = Lute.NewNodeID();
+                    const html = `<div data-node-id="${id}" data-type="NodeBlockquote" class="bq">${content}</div>`;
+
+                    // 默认追加到文档末尾，或者当前聚焦块之后
+                    transaction(protyle, [{
+                        action: "insert",
+                        data: html,
+                        parentID: protyle.block.rootID,
+                        previousID: protyle.wysiwyg.element.lastElementChild?.getAttribute("data-node-id") || undefined
+                    }], [{
+                        action: "delete",
+                        id: id,
+                    }]);
+                    // 自动聚焦
+                    setTimeout(() => {
+                        const newElement = protyle.wysiwyg.element.querySelector(`[data-node-id="${id}"]`);
+                        if (newElement) {
+                            focusByRange(getEditorRange(newElement));
+                        }
+                    }, 200);
+                }
+            };
+
+            window.addEventListener("neura-meeting-transcription", handleTranscription as any, { once: false });
+
+            // 当录制停止时移除监听
+            const checkStop = setInterval(() => {
+                if (!manager.isRecording) {
+                    window.removeEventListener("neura-meeting-transcription", handleTranscription as any);
+                    clearInterval(checkStop);
+                }
+            }, 1000);
+        }
+    }
+
+    private showMeetingSettings(protyle: IProtyle) {
+        const manager = MeetingManager.getInstance();
+        confirmDialog("⚙️ AI 会议纪要设置", `
+            <div class="b3-label">
+                <div class="fn__flex">
+                    <span class="fn__flex-center">自动转录间隔 (分钟)</span>
+                    <span class="fn__space"></span>
+                    <input class="b3-text-field fn__flex-1" type="number" value="${manager.getInterval()}" min="1" max="60" id="meetingIntervalInput">
+                </div>
+                <div class="b3-label__text">建议设置为 1-5 分钟。录音将在此间隔后自动上传并生成内容块。</div>
+            </div>
+        `, () => {
+            const input = document.getElementById("meetingIntervalInput") as HTMLInputElement;
+            const val = parseInt(input.value);
+            if (val > 0) {
+                manager.setInterval(val);
+                showMessage(`设置成功: 每 ${val} 分钟自动转录`);
+            }
+        });
+    }
+
+    private updateIndicator(status: IMeetingStatus, protyle?: IProtyle) {
+        if (!this.indicatorElement) {
+            this.indicatorElement = document.createElement("div");
+            this.indicatorElement.style.cssText = `
+                position: fixed; 
+                bottom: 24px; 
+                right: 24px; 
+                background: rgba(40, 44, 52, 0.9); 
+                backdrop-filter: blur(12px); 
+                -webkit-backdrop-filter: blur(12px); 
+                color: #fff; 
+                padding: 16px; 
+                border-radius: 16px; 
+                z-index: 1000; 
+                font-family: var(--b3-font-family); 
+                box-shadow: 0 8px 32px rgba(0,0,0,0.4); 
+                border: 1px solid rgba(255, 255, 255, 0.15); 
+                transition: all 0.3s cubic-bezier(0.19, 1, 0.22, 1);
+                min-width: 240px;
+                display: flex;
+                flex-direction: column;
+                gap: 12px;
+                pointer-events: auto;
+            `;
+            document.body.appendChild(this.indicatorElement);
+
+            // 样式增强
+            if (!document.getElementById("neura-meeting-indicator-style")) {
+                const style = document.createElement("style");
+                style.id = "neura-meeting-indicator-style";
+                style.innerHTML = `
+                    @keyframes neura-pulse {
+                        0% { opacity: 0.6; transform: scale(0.9); }
+                        50% { opacity: 1; transform: scale(1.1); }
+                        100% { opacity: 0.6; transform: scale(0.9); }
+                    }
+                    .neura-meeting-dot {
+                        width: 10px; height: 10px; background: #ff4d4f; border-radius: 50%;
+                        animation: neura-pulse 1.5s infinite ease-in-out;
+                        box-shadow: 0 0 8px #ff4d4f;
+                    }
+                    .neura-btn-mini {
+                        background: rgba(255,255,255,0.1);
+                        border: none; color: #eee; padding: 4px 8px; border-radius: 4px;
+                        font-size: 11px; cursor: pointer; transition: background 0.2s;
+                    }
+                    .neura-btn-mini:hover { background: rgba(255,255,255,0.2); color: #fff; }
+                    .neura-btn-stop { color: #ff4d4f; }
+                    .neura-btn-stop:hover { background: rgba(255,77,79,0.2); }
+                `;
+                document.head.appendChild(style);
+            }
+        }
+
+        const formatTime = (s: number) => {
+            const m = Math.floor(s / 60);
+            const sec = s % 60;
+            return `${m}:${sec.toString().padStart(2, '0')}`;
+        };
+
+        const statusText = status.isTranscribing
+            ? '<span style="color: #1890ff; font-weight: bold;">✨ AI 思考中...</span>'
+            : '<span style="opacity: 0.8">🎙️ 会议记录中</span>';
+
+        this.indicatorElement.innerHTML = `
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div style="display: flex; align-items: center; gap: 8px; font-size: 13px;">
+                    <div class="neura-meeting-dot"></div>
+                    ${statusText}
+                </div>
+                <div style="display: flex; gap: 6px;">
+                    <button class="neura-btn-mini" id="manualTranscribeBtn" title="立即同步到文档">同步</button>
+                    <button class="neura-btn-mini neura-btn-stop" id="stopMeetingBtn" title="停止录制并关闭">结束</button>
+                </div>
+            </div>
+            <div style="display: flex; justify-content: space-between; align-items: baseline;">
+                <div style="display: flex; flex-direction: column;">
+                    <div style="font-size: 28px; font-weight: 700; font-family: 'JetBrains Mono', monospace; line-height: 1;">${formatTime(status.duration)}</div>
+                </div>
+                <div style="text-align: right;">
+                    <div style="font-size: 10px; opacity: 0.4; text-transform: uppercase; margin-bottom: 2px;">Auto Sync In</div>
+                    <div style="font-size: 14px; color: #faad14; font-weight: 600; font-family: 'JetBrains Mono';">${formatTime(status.nextUploadCountdown)}</div>
+                </div>
+            </div>
+        `;
+
+        // 绑定事件
+        const stopBtn = this.indicatorElement.querySelector("#stopMeetingBtn");
+        const syncBtn = this.indicatorElement.querySelector("#manualTranscribeBtn");
+
+        if (stopBtn && !stopBtn.getAttribute("data-bound")) {
+            stopBtn.addEventListener("click", () => {
+                MeetingManager.getInstance().stopRecording();
+                this.indicatorElement?.remove();
+                this.indicatorElement = null;
+                // 找到对应的面包屑按钮取消激活状态
+                document.querySelectorAll('[data-type="record"]').forEach(el => el.classList.remove("block__icon--active"));
+            });
+            stopBtn.setAttribute("data-bound", "true");
+        }
+
+        if (syncBtn && !syncBtn.getAttribute("data-bound")) {
+            syncBtn.addEventListener("click", () => {
+                MeetingManager.getInstance().uploadAndTranscribe();
+            });
+            syncBtn.setAttribute("data-bound", "true");
+        }
+    }
+
     public hide() {
         if (isMobile()) {
             return;
+        }
+        if (this.indicatorElement) {
+            this.indicatorElement.remove();
+            this.indicatorElement = null;
         }
         this.element.classList.add("protyle-breadcrumb__bar--hide");
         window.siyuan.hideBreadcrumb = true;

@@ -580,4 +580,7 @@ func ServeAPI(ginServer *gin.Engine) {
 	ginServer.Handle("POST", "/api/web/auth/update-profile", webAuthMiddleware, webAuthUpdateProfile)
 	ginServer.Handle("POST", "/api/web/auth/change-password", webAuthMiddleware, webAuthChangePassword)
 	ginServer.Handle("POST", "/api/web/auth/logout", webAuthMiddleware, webAuthLogout)
+
+	meetingAPI := ginServer.Group("/api/meeting", model.CheckWebAuth)
+	meetingAPI.POST("/transcribe", TranscribeAudio)
 }

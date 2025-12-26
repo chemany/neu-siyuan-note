@@ -311,6 +311,13 @@ func enhanceMessagesWithRAG(messages []openai.ChatCompletionMessage) []openai.Ch
 		return messages
 	}
 
+	// 如果消息中已经包含了"【文档正文内容】"，说明前端已经提供了具体的文档上下文，此时跳过 RAG，避免干扰
+	for _, m := range messages {
+		if m.Role == "system" && strings.Contains(m.Content, "【文档正文内容】") {
+			return messages
+		}
+	}
+
 	// 搜索相关文档
 	assets, err := SemanticSearchAssets(util.DataDir, userQuery, 3)
 	if err != nil || len(assets) == 0 {
@@ -898,8 +905,8 @@ func VectorizeAsset(assetPath string) (*AssetVector, error) {
 		return nil, fmt.Errorf("解析资源文件失败: %v", err)
 	}
 
-	if strings.TrimSpace(content) == "" {
-		return nil, fmt.Errorf("资源文件内容为空")
+	if strings.TrimSpace(content) == "" || strings.Contains(content, "找到的 PDF 文件没有找到") || strings.Contains(content, "解析失败") {
+		return nil, fmt.Errorf("资源文件内容无效或解析失败，跳过向量化")
 	}
 
 	// 限制内容长度用于向量化
@@ -1121,7 +1128,7 @@ func SemanticSearchAssets(dataDir, query string, limit int) ([]*AssetVector, err
 	var results []result
 	for _, vector := range vectors {
 		sim := cosineSimilarity(queryVector, vector.Vector)
-		if sim > 0.5 { // 相似度阈值
+		if sim > 0.7 { // 提高相似度阈值，减少噪音
 			results = append(results, result{vector, sim})
 		}
 	}
