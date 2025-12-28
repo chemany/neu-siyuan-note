@@ -147,7 +147,7 @@ resources/*.asar
 # ========================================
 # 保留 README.md (灵枢笔记说明)
 # 排除思源笔记原版文档
-README_zh_CN.md
+# README_zh_CN.md  # 已更新为 NeuLink Notes 说明文档
 README_ja_JP.md
 CHANGELOG.md
 API.md
