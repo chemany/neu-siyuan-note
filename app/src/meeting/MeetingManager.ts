@@ -14,6 +14,9 @@ export class MeetingManager {
     private processor: ScriptProcessorNode | null = null;
     private source: MediaStreamAudioSourceNode | null = null;
     private pcmBuffer: Float32Array[] = [];
+    private audioProcessCount: number = 0;
+    private lastAudioCheck: number = 0;
+    private totalSamplesCollected: number = 0;
     private intervalTimer: any = null;
     private startTime: number = 0;
     private intervalMinutes: number = 1;
@@ -50,6 +53,20 @@ export class MeetingManager {
                 const inputData = e.inputBuffer.getChannelData(0);
                 // 深度拷贝数据
                 this.pcmBuffer.push(new Float32Array(inputData));
+                
+                // 诊断：统计收集的音频数据
+                this.audioProcessCount++;
+                this.totalSamplesCollected += inputData.length;
+                
+                // 每 100 次打印一次诊断信息
+                if (this.audioProcessCount % 100 === 0) {
+                    console.log("Audio process diagnostic:", {
+                        processCount: this.audioProcessCount,
+                        bufferChunks: this.pcmBuffer.length,
+                        totalSamples: this.totalSamplesCollected,
+                        estimatedDuration: (this.totalSamplesCollected / 16000).toFixed(2) + "秒"
+                    });
+                }
             };
 
             this.source.connect(this.processor);
@@ -133,24 +150,47 @@ export class MeetingManager {
     }
 
     public async uploadAndTranscribe() {
-        if (this.pcmBuffer.length === 0) return;
+        if (this.pcmBuffer.length === 0) {
+            console.warn("No PCM data to upload, skipping transcription");
+            return;
+        }
 
         // 1. 合并 PCM 数据并转换为 WAV 格式
         const audioBlob = this.encodeWAV(this.pcmBuffer);
+        
+        // 诊断：计算音频数据的详细信息
+        const totalSamples = this.pcmBuffer.reduce((acc, s) => acc + s.length, 0);
+        const estimatedDuration = (totalSamples / 16000).toFixed(2);
+        
+        console.log("Audio encoding completed:", {
+            blobSize: audioBlob.size,
+            blobType: audioBlob.type,
+            pcmBufferLength: this.pcmBuffer.length,
+            totalSamples: totalSamples,
+            estimatedDuration: estimatedDuration + "秒",
+            bytesPerSample: 2,
+            expectedSize: totalSamples * 2 + 44
+        });
+        
         this.pcmBuffer = []; // 清空缓冲区用于下一次采集
 
         const formData = new FormData();
         formData.append("audio", audioBlob, `meeting_${Date.now()}.wav`);
 
         this._isTranscribing = true;
-        console.log("Auto uploading PCM WAV for transcription...");
+        console.log("Uploading audio for transcription...");
 
         fetch("/api/meeting/transcribe", {
             method: "POST",
             body: formData,
         }).then(res => res.json())
             .then(response => {
+                console.log("Transcription API response:", response);
                 if (response.code === 0 && response.data) {
+                    console.log("Transcription successful:", {
+                        transcription: response.data.transcription,
+                        summary: response.data.summary
+                    });
                     this.insertTranscriptionToEditor(response.data);
                 } else {
                     console.error("Transcription failed:", response.msg);

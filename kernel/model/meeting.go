@@ -6,11 +6,36 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/siyuan-note/logging"
 )
+
+func findIncrementalContent(oldText, newText string) string {
+	if oldText == "" || newText == "" {
+		return newText
+	}
+	minLen := len(oldText)
+	if len(newText) < minLen {
+		minLen = len(newText)
+	}
+	foundPrefix := false
+	prefixLen := 0
+	for i := 0; i < minLen; i++ {
+		if oldText[i] == newText[i] {
+			foundPrefix = true
+			prefixLen = i + 1
+		} else {
+			break
+		}
+	}
+	if foundPrefix && prefixLen < len(newText) {
+		return newText[prefixLen:]
+	}
+	return ""
+}
 
 // MeetingService 会议纪要服务
 type MeetingService struct{}
@@ -29,12 +54,16 @@ func (s *MeetingService) TranscribeAudio(audioData []byte) (*TranscribeAudioResp
 		return nil, fmt.Errorf("audio data is empty")
 	}
 
+	logging.LogDebugf("TranscribeAudio: received audio data, size: %d bytes", len(audioData))
+
 	// 1. 调用 ASR 服务 (假设使用本地 FunASR REST API)
 	transcription, err := s.callASR(audioData)
 	if err != nil {
 		logging.LogErrorf("ASR failed: %v", err)
 		return nil, err
 	}
+
+	logging.LogDebugf("ASR transcription result: '%s'", transcription)
 
 	// 2. 调用 LLM 生成摘要
 	summary := ""
@@ -56,6 +85,8 @@ func (s *MeetingService) callASR(audioData []byte) (string, error) {
 	// 补全末尾斜杠，有些服务器对路径很敏感
 	asrURL := "ws://jason.cheman.top:10096/"
 
+	logging.LogDebugf("ASR: Connecting to %s, audio data size: %d bytes", asrURL, len(audioData))
+
 	dialer := websocket.DefaultDialer
 	dialer.HandshakeTimeout = 15 * time.Second
 
@@ -71,6 +102,8 @@ func (s *MeetingService) callASR(audioData []byte) (string, error) {
 	}
 	defer conn.Close()
 
+	logging.LogDebugf("ASR: WebSocket connected successfully")
+
 	// 1. 发送开始配置 (根据文档使用 2pass 模式)
 	startConfig := map[string]interface{}{
 		"mode":           "2pass",
@@ -83,10 +116,14 @@ func (s *MeetingService) callASR(audioData []byte) (string, error) {
 		return "", fmt.Errorf("failed to send start config: %v", err)
 	}
 
+	logging.LogDebugf("ASR: Sending audio data (%d bytes)...", len(audioData))
+
 	// 2. 发送二进制音频数据
 	if err := conn.WriteMessage(websocket.BinaryMessage, audioData); err != nil {
 		return "", fmt.Errorf("failed to send audio data: %v", err)
 	}
+
+	logging.LogDebugf("ASR: Audio data sent, sending end signal...")
 
 	// 3. 发送结束信号 (is_speaking 为 false)
 	endConfig := map[string]interface{}{
@@ -97,18 +134,26 @@ func (s *MeetingService) callASR(audioData []byte) (string, error) {
 	}
 
 	// 4. 循环读取识别结果，直到 is_final 为 true
-	finalText := ""
-	timeout := time.After(30 * time.Second)
+	// FunASR 2pass 模式：前期返回增量片段，后期返回累积完整文本
+	accumulatedText := ""
+	timeout := time.After(60 * time.Second) // 延长超时到60秒
+	messageCount := 0
+
+	logging.LogDebugf("ASR: Waiting for recognition results...")
 
 	for {
 		select {
 		case <-timeout:
-			return finalText, fmt.Errorf("ASR timed out waiting for final result")
+			logging.LogWarnf("ASR: Timeout waiting for result, partial text: '%s'", accumulatedText)
+			return accumulatedText, fmt.Errorf("ASR timed out waiting for final result")
 		default:
 			_, message, err := conn.ReadMessage()
 			if err != nil {
-				return finalText, fmt.Errorf("failed to read ASR result: %v", err)
+				logging.LogErrorf("ASR: Failed to read message: %v", err)
+				return accumulatedText, fmt.Errorf("failed to read ASR result: %v", err)
 			}
+
+			messageCount++
 
 			var result struct {
 				Text    string `json:"text"`
@@ -119,15 +164,42 @@ func (s *MeetingService) callASR(audioData []byte) (string, error) {
 				continue
 			}
 
-			// 累积或更新文本内容
+			logging.LogDebugf("ASR: Received message #%d, is_final: %v, text: '%s'", messageCount, result.IsFinal, result.Text)
+
+			// 处理识别结果
 			if result.Text != "" {
-				finalText = result.Text
+				// 判断是否为累积完整文本（以已有文本开头）
+				if strings.HasPrefix(result.Text, accumulatedText) {
+					// 是累积文本，提取真正的新增内容
+					newContent := result.Text[len(accumulatedText):]
+					if newContent != "" {
+						accumulatedText = result.Text
+						logging.LogDebugf("ASR: Appended new content: '%s' (total: '%s')", newContent, accumulatedText)
+					}
+				} else {
+					// 文本不匹配，尝试找出公共前缀
+					logging.LogDebugf("ASR: Text mismatch. Current: '%s', New: '%s'", accumulatedText, result.Text)
+					newContent := findIncrementalContent(accumulatedText, result.Text)
+					if newContent != "" {
+						accumulatedText += newContent
+						logging.LogDebugf("ASR: Incremental append: '%s' (total: '%s')", newContent, accumulatedText)
+					} else if len(result.Text) > len(accumulatedText) {
+						// 新文本更长且没有公共前缀，直接使用
+						accumulatedText = result.Text
+						logging.LogDebugf("ASR: Replace with longer text: '%s'", accumulatedText)
+					} else {
+						logging.LogDebugf("ASR: Ignore shorter/invalid text: '%s'", result.Text)
+					}
+				}
+			} else {
+				logging.LogDebugf("ASR: Empty text, skip (is_final: %v)", result.IsFinal)
 			}
 
 			// 如果收到最终标识，跳出循环
 			if result.IsFinal {
-				logging.LogDebugf("Received final ASR result: %s", finalText)
-				return finalText, nil
+				// 如果最终消息的 text 为空，accumulatedText 已经包含了所有内容
+				logging.LogDebugf("ASR: Received final result: '%s'", accumulatedText)
+				return accumulatedText, nil
 			}
 		}
 	}
@@ -140,33 +212,28 @@ func (s *MeetingService) GenerateSummary(text string) (string, error) {
 	apiKey := "vllm-token"
 	modelName := "tclf90/Qwen3-32B-GPTQ-Int4"
 
-	// 强制示例（Few-Shot），让 AI 明白什么叫“极简”
-	prompt := fmt.Sprintf(`你是思源笔记的会议纪要插件，严禁输出任何废话。
+	prompt := fmt.Sprintf(`你是专业的会议纪要撰写专家，请将以下会议内容整理成正式、专业的商务会议纪要格式。
 
-### 输出规范：
-1. 严禁任何开场白（如“好的”、“收到”、“首先”）。
-2. 严禁任何思考过程。
-3. 仅输出以下两行内容，不准多出一个字：
-> **正在讨论**：[话题概括]
-> **结论/行动**：[决定事项]
+### 格式要求：
+> **会议主题**：[一句话概括会议核心议题]
+> **关键讨论**：[主要讨论内容的专业概述，2-3句话]
+> **重要决议**：[明确的决定事项和行动要点]
 
-### 示例：
-输入：大家觉得这个项目下周一上线怎么样？我觉得没问题，那就这么定了。
-输出：
-> **正在讨论**：项目上线时间安排
-> **结论/行动**：确认项目于下周一正式上线。
+### 待整理内容：
+%s
 
-### 待处理文本：
-%s`, text)
+### 输出要求：
+- 直接输出三行会议纪要
+- 不包含任何思考过程或开场白`, text)
 
 	payload := map[string]interface{}{
 		"model": modelName,
 		"messages": []map[string]string{
-			{"role": "system", "content": "You are a professional stenographer. Output ONLY the summary block. NO preamble, NO conversation."},
+			{"role": "system", "content": "You are a strict meeting minutes generator. OUTPUT ONLY the summary in the exact format requested. NO explanation. NO thinking process. NO preamble. JUST the three lines starting with '> **'."},
 			{"role": "user", "content": prompt},
 		},
 		"stream":      false,
-		"temperature": 0.1, // 进一步压低随机性，使其完全模仿示例
+		"temperature": 0.3,
 		"max_tokens":  200,
 	}
 
