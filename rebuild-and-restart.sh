@@ -58,7 +58,5 @@ echo ""
 echo "⏳ 等待服务启动..."
 sleep 3
 
-# 检查服务状态
 echo ""
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-./check-status.sh
+echo "✅ 服务重启成功，请访问 http://localhost:6806 进行测试"

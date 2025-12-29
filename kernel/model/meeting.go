@@ -11,6 +11,9 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/siyuan-note/logging"
+	"golang.org/x/text/encoding"
+	"golang.org/x/text/encoding/simplifiedchinese"
+	"golang.org/x/text/transform"
 )
 
 func findIncrementalContent(oldText, newText string) string {
@@ -35,6 +38,91 @@ func findIncrementalContent(oldText, newText string) string {
 		return newText[prefixLen:]
 	}
 	return ""
+}
+
+func isValidUTF8(s string) bool {
+	for i := 0; i < len(s); i++ {
+		b := s[i]
+		if b >= 0x80 {
+			if b >= 0xFC && b <= 0xFD {
+				for i := 1; i < 6; i++ {
+					if i+i >= len(s) {
+						return false
+					}
+					if s[i+i] < 0x80 || s[i+i] > 0xBF {
+						return false
+					}
+				}
+				i += 5
+			} else if b >= 0xF8 && b <= 0xFB {
+				for i := 1; i < 5; i++ {
+					if i+i >= len(s) {
+						return false
+					}
+					if s[i+i] < 0x80 || s[i+i] > 0xBF {
+						return false
+					}
+				}
+				i += 4
+			} else if b >= 0xF0 && b <= 0xF7 {
+				for i := 1; i < 4; i++ {
+					if i+i >= len(s) {
+						return false
+					}
+					if s[i+i] < 0x80 || s[i+i] > 0xBF {
+						return false
+					}
+				}
+				i += 3
+			} else if b >= 0xE0 && b <= 0xEF {
+				for i := 1; i < 3; i++ {
+					if i+i >= len(s) {
+						return false
+					}
+					if s[i+i] < 0x80 || s[i+i] > 0xBF {
+						return false
+					}
+				}
+				i += 2
+			} else if b >= 0xC0 && b <= 0xDF {
+				if i+1 >= len(s) {
+					return false
+				}
+				if s[i+1] < 0x80 || s[i+1] > 0xBF {
+					return false
+				}
+				i += 1
+			} else {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func convertToUTF8(text string) string {
+	if isValidUTF8(text) {
+		return text
+	}
+
+	encodings := []encoding.Encoding{
+		simplifiedchinese.GBK,
+		simplifiedchinese.GB18030,
+	}
+
+	for _, enc := range encodings {
+		reader := transform.NewReader(strings.NewReader(text), enc.NewDecoder())
+		result, err := io.ReadAll(reader)
+		if err == nil {
+			if isValidUTF8(string(result)) {
+				logging.LogDebugf("Converted text to UTF-8, length: %d", len(result))
+				return string(result)
+			}
+		}
+	}
+
+	logging.LogWarnf("Failed to convert text to UTF-8, keeping original (length: %d)", len(text))
+	return text
 }
 
 // MeetingService 会议纪要服务
@@ -62,6 +150,9 @@ func (s *MeetingService) TranscribeAudio(audioData []byte) (*TranscribeAudioResp
 		logging.LogErrorf("ASR failed: %v", err)
 		return nil, err
 	}
+
+	// 2. 确保转录结果是 UTF-8 编码
+	transcription = convertToUTF8(transcription)
 
 	logging.LogDebugf("ASR transcription result: '%s'", transcription)
 
@@ -273,7 +364,9 @@ func (s *MeetingService) GenerateSummary(text string) (string, error) {
 	}
 
 	if len(result.Choices) > 0 {
-		return result.Choices[0].Message.Content, nil
+		summary := result.Choices[0].Message.Content
+		summary = convertToUTF8(summary)
+		return summary, nil
 	}
 	return "", fmt.Errorf("no summary generated")
 }
