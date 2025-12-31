@@ -12,6 +12,7 @@ vendor/
 # Kernel 二进制文件 (~200M)
 kernel/kernel
 kernel/siyuan-kernel
+siyuan-kernel
 kernel/stage/
 app/kernel/
 app/kernel*
