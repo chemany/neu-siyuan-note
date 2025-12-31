@@ -6,12 +6,66 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/siyuan-note/logging"
 )
+
+// ASR 配置
+var asrEndpoint = "ws://jason.cheman.top:10096/"
+
+// LLM 配置
+var llmEndpoint = "http://jason.cheman.top:8001/v1"
+var llmAPIKey = "vllm-token"
+var llmModelName = "tclf90/Qwen3-32B-GPTQ-Int4"
+
+func init() {
+	// 加载 ASR 配置
+	asrConfigPath := "/root/code/unified-settings-service/config/asr-config.json"
+	asrData, err := os.ReadFile(asrConfigPath)
+	if err == nil {
+		var asrConfig struct {
+			Endpoint string `json:"endpoint"`
+		}
+		if json.Unmarshal(asrData, &asrConfig) == nil && asrConfig.Endpoint != "" {
+			asrEndpoint = asrConfig.Endpoint
+			if !strings.HasSuffix(asrEndpoint, "/") {
+				asrEndpoint += "/"
+			}
+			logging.LogInfof("ASR 配置已加载: %s", asrEndpoint)
+		}
+	} else {
+		logging.LogWarnf("ASR 配置文件不存在，使用默认配置: %s", asrConfigPath)
+	}
+
+	// 加载 LLM 默认模型配置
+	llmConfigPath := "/root/code/unified-settings-service/config/default-models.json"
+	llmData, err := os.ReadFile(llmConfigPath)
+	if err == nil {
+		var models map[string]struct {
+			BaseURL   string `json:"base_url"`
+			APIKey    string `json:"api_key"`
+			ModelName string `json:"model_name"`
+		}
+		if json.Unmarshal(llmData, &models) == nil {
+			// 优先使用 siyuan 模型
+			if model, ok := models["builtin_free_siyuan"]; ok {
+				llmEndpoint = model.BaseURL
+				llmAPIKey = model.APIKey
+				llmModelName = model.ModelName
+				if !strings.HasSuffix(llmEndpoint, "/") {
+					llmEndpoint += "/"
+				}
+				logging.LogInfof("LLM 配置已加载 (siyuan): %s %s", llmEndpoint, llmModelName)
+			}
+		}
+	} else {
+		logging.LogWarnf("LLM 配置文件不存在，使用默认配置: %s", llmConfigPath)
+	}
+}
 
 func findIncrementalContent(oldText, newText string) string {
 	if oldText == "" || newText == "" {
@@ -297,7 +351,7 @@ func (s *MeetingService) TranscribeAudio(audioData []byte) (*TranscribeAudioResp
 // callASR 调用 ASR 服务 (WebSocket 模式)
 func (s *MeetingService) callASR(audioData []byte) (string, error) {
 	// 补全末尾斜杠，有些服务器对路径很敏感
-	asrURL := "ws://jason.cheman.top:10096/"
+	asrURL := asrEndpoint
 
 	// 1. 去除 WAV 头部 (44 bytes)，只发送纯 PCM 数据
 	// 如果不去除，头部信息会被识别为刺耳噪音，导致开头乱码或识别错误
@@ -468,10 +522,10 @@ func (s *MeetingService) callASR(audioData []byte) (string, error) {
 
 // GenerateSummary 生成摘要
 func (s *MeetingService) GenerateSummary(text string) (string, error) {
-	// 使用用户提供的本地 VLLM 增强模型配置
-	llmURL := "http://jason.cheman.top:8001/v1/chat/completions"
-	apiKey := "vllm-token"
-	modelName := "tclf90/Qwen3-32B-GPTQ-Int4"
+	// 使用配置中的 LLM 设置
+	llmURL := llmEndpoint + "/chat/completions"
+	apiKey := llmAPIKey
+	modelName := llmModelName
 
 	prompt := fmt.Sprintf(`你是专业的会议纪要撰写专家，请将以下会议内容整理成正式、专业的商务会议纪要格式。
 

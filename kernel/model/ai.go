@@ -179,7 +179,7 @@ func getEffectiveAIConfig() (apiKey, apiBaseURL, apiModel string, maxTokens int,
 	needDefaultConfig := apiKey == "" || apiKey == "USE_DEFAULT_CONFIG" || apiModel == "USE_DEFAULT_CONFIG" || Conf.AI.OpenAI.APIProvider == "builtin"
 
 	if needDefaultConfig {
-		configPath := "/home/jason/code/unified-settings-service/config/default-models.json"
+		configPath := "/root/code/unified-settings-service/config/default-models.json"
 		data, err := os.ReadFile(configPath)
 		if err == nil {
 			var models map[string]DefaultModelConfig
@@ -360,7 +360,7 @@ func isOpenAIAPIEnabled() bool {
 	// 如果APIKey为空，尝试检查是否有默认配置可用
 	if "" == Conf.AI.OpenAI.APIKey {
 		// 检查默认配置文件是否存在
-		configPath := "/home/jason/code/unified-settings-service/config/default-models.json"
+		configPath := "/root/code/unified-settings-service/config/default-models.json"
 		if _, err := os.Stat(configPath); err == nil {
 			return true // 有默认配置文件，允许使用
 		}
@@ -505,7 +505,7 @@ type GlobalEmbeddingConfig struct {
 }
 
 // 全局配置文件路径
-const globalEmbeddingConfigPath = "/home/jason/code/unified-settings-service/config/embedding-config.json"
+const globalEmbeddingConfigPath = "/root/code/unified-settings-service/config/embedding-config.json"
 
 // loadGlobalEmbeddingConfig 加载全局向量化配置
 func loadGlobalEmbeddingConfig() *GlobalEmbeddingConfig {
