@@ -31,7 +31,15 @@ func init() {
 			Endpoint string `json:"endpoint"`
 		}
 		if json.Unmarshal(asrData, &asrConfig) == nil && asrConfig.Endpoint != "" {
-			asrEndpoint = asrConfig.Endpoint
+			// 确保 endpoint 有正确的协议前缀
+			rawEndpoint := asrConfig.Endpoint
+			if strings.HasPrefix(rawEndpoint, "http://") {
+				asrEndpoint = "ws://" + strings.TrimPrefix(rawEndpoint, "http://")
+			} else if strings.HasPrefix(rawEndpoint, "https://") {
+				asrEndpoint = "wss://" + strings.TrimPrefix(rawEndpoint, "https://")
+			} else {
+				asrEndpoint = "ws://" + rawEndpoint
+			}
 			if !strings.HasSuffix(asrEndpoint, "/") {
 				asrEndpoint += "/"
 			}
