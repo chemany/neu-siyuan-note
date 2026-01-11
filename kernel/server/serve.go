@@ -565,17 +565,33 @@ func serveAssets(ginServer *gin.Engine) {
 		relativePath := path.Join("assets", requestPath)
 		p, err := model.GetAssetAbsPath(relativePath)
 		if err != nil {
-			if strings.Contains(strings.TrimPrefix(requestPath, "/"), "/") {
-				// 再使用编码过的路径解析一次 https://github.com/siyuan-note/siyuan/issues/11823
-				dest := url.PathEscape(strings.TrimPrefix(requestPath, "/"))
-				dest = strings.ReplaceAll(dest, ":", "%3A")
-				relativePath = path.Join("assets", dest)
-				p, err = model.GetAssetAbsPath(relativePath)
+			// 如果标准路径找不到，尝试从当前用户目录下搜索
+			// 支持 /assets/xxx.png 格式，自动映射到 /assets/{username}/xxx.png
+			if !strings.Contains(requestPath, "/") {
+				// 请求格式: /assets/xxx.png（没有用户名前缀）
+				username, exists := context.Get("web_username")
+				if exists && username != "" {
+					userAssetsPath := filepath.Join(util.DataDir, username.(string), "assets", requestPath)
+					if gulu.File.IsExist(userAssetsPath) {
+						p = userAssetsPath
+						err = nil
+					}
+				}
 			}
 
 			if err != nil {
-				context.Status(http.StatusNotFound)
-				return
+				if strings.Contains(strings.TrimPrefix(requestPath, "/"), "/") {
+					// 再使用编码过的路径解析一次 https://github.com/siyuan-note/siyuan/issues/11823
+					dest := url.PathEscape(strings.TrimPrefix(requestPath, "/"))
+					dest = strings.ReplaceAll(dest, ":", "%3A")
+					relativePath = path.Join("assets", dest)
+					p, err = model.GetAssetAbsPath(relativePath)
+				}
+
+				if err != nil {
+					context.Status(http.StatusNotFound)
+					return
+				}
 			}
 		}
 

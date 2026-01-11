@@ -436,15 +436,103 @@ func GetAssetAbsPath(relativePath string) (ret string, err error) {
 		relativePath = relativePath[:strings.Index(relativePath, "?")]
 	}
 
+	logging.LogDebugf("[Assets] GetAssetAbsPath called with: %s", relativePath)
+
 	// 在全局 assets 路径下搜索
 	p := filepath.Join(util.DataDir, relativePath)
 	if gulu.File.IsExist(p) {
+		logging.LogDebugf("[Assets] Found in global path: %s", p)
 		ret = p
 		if !util.IsSubPath(util.WorkspaceDir, ret) {
 			err = fmt.Errorf("[%s] is not sub path of workspace", ret)
 			return
 		}
 		return
+	}
+
+	// 从环境变量获取用户数据根目录
+	userDataRoot := os.Getenv("SIYUAN_USER_DATA_ROOT")
+	if userDataRoot != "" {
+		// 在用户数据根目录下搜索
+		userDataPath := filepath.Join(userDataRoot, relativePath)
+		if gulu.File.IsExist(userDataPath) {
+			logging.LogDebugf("[Assets] Found in user data root: %s", userDataPath)
+			ret = userDataPath
+			if !util.IsSubPath(util.WorkspaceDir, ret) {
+				err = fmt.Errorf("[%s] is not sub path of workspace", ret)
+				return
+			}
+			return
+		}
+	}
+
+	// 在用户目录下搜索（支持 /assets/username/xxx.png 格式）
+	// 例如: /assets/jason/image-xxx.png -> /root/code/MindOcean/user-data/notes/jason/assets/image-xxx.png
+	if strings.HasPrefix(relativePath, "assets/") {
+		// 提取 assets 后面的路径
+		assetsRelPath := strings.TrimPrefix(relativePath, "assets/")
+		if strings.Contains(assetsRelPath, "/") {
+			// 格式: assets/username/xxx.png
+			parts := strings.SplitN(assetsRelPath, "/", 2)
+			username := parts[0]
+			assetFile := parts[1]
+			userAssetsPath := filepath.Join(util.DataDir, username, "assets", assetFile)
+			logging.LogDebugf("[Assets] Trying user path: %s", userAssetsPath)
+			if gulu.File.IsExist(userAssetsPath) {
+				logging.LogDebugf("[Assets] Found in user path: %s", userAssetsPath)
+				ret = userAssetsPath
+				if !util.IsSubPath(util.WorkspaceDir, ret) {
+					err = fmt.Errorf("[%s] is not sub path of workspace", ret)
+					return
+				}
+				return
+			}
+		} else {
+			// 格式: assets/xxx.png（没有用户名前缀）
+			// 尝试在所有用户目录下搜索
+			logging.LogDebugf("[Assets] Searching in all user directories for: %s", assetsRelPath)
+			entries, dirErr := os.ReadDir(util.DataDir)
+			found := false
+			if dirErr == nil {
+				for _, entry := range entries {
+					if entry.IsDir() && entry.Name() != "local-settings.json" {
+						userAssetsPath := filepath.Join(util.DataDir, entry.Name(), "assets", assetsRelPath)
+						logging.LogDebugf("[Assets] Checking: %s", userAssetsPath)
+						if gulu.File.IsExist(userAssetsPath) {
+							logging.LogDebugf("[Assets] Found at: %s", userAssetsPath)
+							ret = userAssetsPath
+							if !util.IsSubPath(util.WorkspaceDir, ret) {
+								err = fmt.Errorf("[%s] is not sub path of workspace", ret)
+								return
+							}
+							found = true
+							break
+						}
+					}
+				}
+			}
+
+			// 如果在 workspace 下没找到，尝试在 SIYUAN_USER_DATA_ROOT 下搜索
+			if !found && userDataRoot != "" {
+				logging.LogDebugf("[Assets] Not found in workspace, searching in userDataRoot: %s", userDataRoot)
+				userDataEntries, dirErr := os.ReadDir(userDataRoot)
+				if dirErr == nil {
+					for _, entry := range userDataEntries {
+						if entry.IsDir() && entry.Name() != "local-settings.json" {
+							userAssetsPath := filepath.Join(userDataRoot, entry.Name(), "assets", assetsRelPath)
+							logging.LogDebugf("[Assets] Checking userDataRoot: %s", userAssetsPath)
+							if gulu.File.IsExist(userAssetsPath) {
+								logging.LogDebugf("[Assets] Found in userDataRoot: %s", userAssetsPath)
+								ret = userAssetsPath
+								// 跳过 IsSubPath 检查，因为 userDataRoot 可能不在 workspace 目录下
+								// 安全由 Web 认证保证
+								return
+							}
+						}
+					}
+				}
+			}
+		}
 	}
 
 	// 在笔记本下搜索

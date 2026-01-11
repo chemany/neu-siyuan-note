@@ -71,7 +71,7 @@ type OCRAssetResult struct {
 // getPaddleOCRConfig 获取 PaddleOCR 配置
 func getPaddleOCRConfig() *PaddleOCRConfig {
 	// 从配置文件读取，如果不存在则使用默认配置
-	configPath := "/root/code/NeuraLink-Notes/config/ocr-config.json"
+	configPath := "/root/code/neu-siyuan-note/config/ocr-config.json"
 	data, err := os.ReadFile(configPath)
 	if err == nil {
 		var config PaddleOCRConfig

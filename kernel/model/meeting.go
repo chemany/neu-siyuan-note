@@ -365,6 +365,27 @@ func (s *MeetingService) callASR(audioData []byte) (string, error) {
 	// 如果不去除，头部信息会被识别为刺耳噪音，导致开头乱码或识别错误
 	pcmData := audioData
 	if len(audioData) > 44 && string(audioData[:4]) == "RIFF" {
+		// 解析 WAV 头部信息用于调试
+		if len(audioData) >= 44 {
+			// WAV 头部格式：
+			// 0-3: "RIFF"
+			// 4-7: file size - 8
+			// 8-11: "WAVE"
+			// 12-15: "fmt "
+			// 16-19: fmt chunk size (通常是 16)
+			// 20-21: audio format (1 = PCM)
+			// 22-23: num channels
+			// 24-27: sample rate
+			// 28-31: byte rate
+			// 32-33: block align
+			// 34-35: bits per sample
+			audioFormat := int(audioData[20]) | int(audioData[21])<<8
+			numChannels := int(audioData[22]) | int(audioData[23])<<8
+			sampleRate := int(audioData[24]) | int(audioData[25])<<8 | int(audioData[26])<<16 | int(audioData[27])<<24
+			bitsPerSample := int(audioData[34]) | int(audioData[35])<<8
+			logging.LogInfof("ASR: WAV header - format=%d, channels=%d, sampleRate=%d, bitsPerSample=%d", 
+				audioFormat, numChannels, sampleRate, bitsPerSample)
+		}
 		logging.LogDebugf("ASR: Detected WAV header, stripping first 44 bytes.")
 		pcmData = audioData[44:]
 	}
@@ -504,6 +525,9 @@ func (s *MeetingService) callASR(audioData []byte) (string, error) {
 
 		messageCount++
 
+		// 打印原始消息用于调试
+		logging.LogDebugf("ASR: Raw message #%d: %s", messageCount, string(message))
+
 		var result struct {
 			Text    string `json:"text"`
 			IsFinal bool   `json:"is_final"`
@@ -514,16 +538,22 @@ func (s *MeetingService) callASR(audioData []byte) (string, error) {
 			continue
 		}
 
-		if result.IsFinal {
-			logging.LogDebugf("ASR: Sentence finalized: '%s'", result.Text)
+		// 2pass 模式下，2pass-offline 的结果是最终的高质量识别结果
+		// 需要收集这些结果，而不是等待 is_final=true 的空消息
+		if result.Mode == "2pass-offline" && result.Text != "" {
+			logging.LogDebugf("ASR: 2pass-offline result: '%s'", result.Text)
 			fullTranscriptBuilder.WriteString(result.Text)
+			latestPartialText = ""
+		} else if result.IsFinal {
+			logging.LogDebugf("ASR: Sentence finalized: '%s'", result.Text)
+			if result.Text != "" {
+				fullTranscriptBuilder.WriteString(result.Text)
+			}
 			// 此句话已经确定，清空暂存区
 			latestPartialText = ""
 		} else {
-			// 将中间结果暂存
-			// FunASR 的 partial text 通常是当前正在识别的完整短句
+			// 将中间结果暂存 (2pass-online 的实时结果)
 			latestPartialText = result.Text
-			// logging.LogDebugf("ASR Partial: %s", result.Text)
 		}
 	}
 }

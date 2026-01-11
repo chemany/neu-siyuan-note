@@ -53,13 +53,16 @@ func CheckWebAuth(c *gin.Context) {
 		"/stage/login.html",
 		"/stage/register.html",
 		"/stage/protyle/",
-		"/stage/icon",           // icon.png, icon-large.png
+		"/stage/icon",           // icon.png, icon-large.png, 以及带后缀的图标文件
 		"/stage/loading",        // loading.svg, loading-pure.svg
 		"/stage/build/fonts/",   // 字体文件
 		"/stage/build/desktop/", // 桌面端静态资源
 		"/stage/build/mobile/",  // 移动端静态资源
 		"/stage/build/app/",     // 应用端静态资源
 		"/stage/base.",          // base.css
+		"/stage/build/desktop",  // desktop 目录（包含所有桌面端资源）
+		"/stage/build/mobile",   // mobile 目录（包含所有移动端资源）
+		"/stage/build/app",      // app 目录（包含所有应用端资源）
 		"/appearance/",
 		"/favicon.ico",
 		"/manifest.webmanifest",
@@ -239,7 +242,6 @@ func GetWebUserID(c *gin.Context) string {
 	}
 	return userID.(string)
 }
-
 
 // SwitchWorkspace 完整切换工作空间（切换所有相关路径变量）
 // 这个函数会更新 util 包中的所有路径变量，确保用户数据完全隔离
