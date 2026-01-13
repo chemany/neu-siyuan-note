@@ -8,8 +8,10 @@ import { updateHotkeyAfterTip } from "../../protyle/util/compatibility";
 import { getDockByType } from "../tabUtil";
 import { getAllModels } from "../getAll";
 import { insertHTML } from "../../protyle/util/insertHTML";
-import { focusBlock } from "../../protyle/util/selection";
+import { focusBlock, focusByRange, getEditorRange } from "../../protyle/util/selection";
 import { fetchSyncPost } from "../../util/fetch";
+import { MeetingManager } from "../../meeting/MeetingManager";
+import { transaction } from "../../protyle/wysiwyg/transaction";
 
 interface IAIMessage {
     role: "user" | "assistant" | "system";
@@ -17,10 +19,13 @@ interface IAIMessage {
     timestamp: number;
 }
 
+
 export class AI extends Model {
     private element: Element;
     private messages: IAIMessage[] = [];
     private currentEditor: any = null;
+    private activeTab: "chat" | "meeting" = "chat";
+    private meetingTimer: any = null;
 
     constructor(app: App, tab: Tab | Element) {
         super({ app, id: tab.id });
@@ -30,74 +35,257 @@ export class AI extends Model {
             this.element = tab.panelElement;
         }
 
-        /// #if MOBILE
-        this.element.innerHTML = `<div class="toolbar toolbar--border toolbar--dark">
-    <div class="fn__space"></div>
-    <div class="toolbar__text">
-        AI 文档分析
-    </div>
-    <span class="fn__flex-1"></span>
-</div>
-<div class="fn__flex-1 ai-chat-container" style="background-color: var(--b3-theme-background); padding: 10px; display: flex; flex-direction: column;">
-    <div class="ai-messages" style="flex: 1; overflow-y: auto; margin-bottom: 10px; border: 1px solid var(--b3-theme-surface-lighter); border-radius: 4px; padding: 10px;" data-type="messages">
-        <div class="ai-welcome" style="color: var(--b3-theme-on-surface-light); text-align: center; padding: 20px;">
-            <p style="margin-bottom: 10px;">🤖 AI 文档分析助手</p>
-            <p style="font-size: 12px;">选择一个提示词快速开始分析当前文档</p>
-        </div>
-    </div>
-    <div class="ai-prompts" style="margin-bottom: 8px; display: flex; flex-wrap: wrap; gap: 4px;">
-        <button class="b3-button b3-button--outline" data-prompt="总结" style="font-size: 12px; padding: 2px 8px;">📝 总结文档</button>
-        <button class="b3-button b3-button--outline" data-prompt="要点" style="font-size: 12px; padding: 2px 8px;">🎯 提取要点</button>
-        <button class="b3-button b3-button--outline" data-prompt="续写" style="font-size: 12px; padding: 2px 8px;">✍️ 续写</button>
-        <button class="b3-button b3-button--outline" data-prompt="优化" style="font-size: 12px; padding: 2px 8px;">✨ 优化</button>
-    </div>
-    <div class="ai-input" style="display: flex; gap: 4px;">
-        <input type="text" class="b3-text-field fn__flex-1" placeholder="输入问题或选择提示词..." data-type="input">
-        <button class="b3-button b3-button--outline" data-type="send">发送</button>
-    </div>
-</div>`;
-        /// #else
-        this.element.classList.add("fn__flex-column", "file-tree", "sy__ai");
-        this.element.innerHTML = `<div class="block__icons">
-    <div class="block__logo">
-        <svg class="block__logoicon"><use xlink:href="#iconSparkles"></use></svg>AI 文档分析&nbsp;
-    </div>
-    <span class="fn__flex-1"></span>
-    <span data-type="min" class="block__icon b3-tooltips b3-tooltips__w" aria-label="${window.siyuan.languages.min}${updateHotkeyAfterTip(window.siyuan.config.keymap.general.closeTab.custom)}"><svg><use xlink:href="#iconMin"></use></svg></span>
-</div>
-<div class="fn__flex-1 ai-chat-container" style="background-color: var(--b3-theme-background); padding: 8px; display: flex; flex-direction: column;">
-    <div class="ai-messages" style="flex: 1; overflow-y: auto; margin-bottom: 8px; border: 1px solid var(--b3-border-color); border-radius: 4px; padding: 8px; background: var(--b3-theme-surface);" data-type="messages">
-        <div class="ai-welcome" style="color: var(--b3-theme-on-surface-light); text-align: center; padding: 20px 10px;">
-            <div style="font-size: 24px; margin-bottom: 8px;">🤖</div>
-            <div style="font-weight: bold; margin-bottom: 8px;">AI 文档分析助手</div>
-            <div style="font-size: 12px; line-height: 1.6;">
-                选择一个提示词快速开始分析当前文档<br>
-                分析完成后可以保存到笔记末尾
-            </div>
-        </div>
-    </div>
-    <div class="ai-prompts" style="margin-bottom: 8px; display: grid; grid-template-columns: 1fr 1fr; gap: 6px;">
-        <button class="b3-button b3-button--outline" data-prompt="总结" style="font-size: 12px;">📝 总结文档</button>
-        <button class="b3-button b3-button--outline" data-prompt="要点" style="font-size: 12px;">🎯 提取要点</button>
-        <button class="b3-button b3-button--outline" data-prompt="续写" style="font-size: 12px;">✍️ 续写内容</button>
-        <button class="b3-button b3-button--outline" data-prompt="优化" style="font-size: 12px;">✨ 优化表达</button>
-        <button class="b3-button b3-button--outline" data-prompt="翻译" style="font-size: 12px;">🌐 翻译</button>
-        <button class="b3-button b3-button--outline" data-prompt="问答" style="font-size: 12px;">💬 问答</button>
-    </div>
-    <div class="ai-input-container" style="display: flex; flex-direction: column; gap: 6px;">
-        <div class="ai-input" style="display: flex; gap: 6px;">
-            <input type="text" class="b3-text-field fn__flex-1" placeholder="输入问题或选择提示词..." data-type="input" style="font-size: 13px;">
-            <button class="b3-button b3-button--outline" data-type="send" style="min-width: 60px;">发送</button>
-        </div>
-        <div class="ai-actions" style="display: none; gap: 6px;">
-            <button class="b3-button b3-button--outline fn__flex-1" data-type="save" style="font-size: 12px;">💾 保存到笔记</button>
-            <button class="b3-button b3-button--text" data-type="clear" style="font-size: 12px;">🗑️ 清空</button>
-        </div>
-    </div>
-</div>`;
-        /// #endif
+        // 注入样式
+        this.injectStyles();
 
+        this.element.classList.add("fn__flex-column", "file-tree", "sy__ai");
+
+        // 渲染基础框架
+        this.renderLayout();
+
+        // 绑定事件
         this.bindEvents();
+
+        // 如果是会议页面，初始化会议状态监听
+        this.initMeetingListener();
+    }
+
+    private injectStyles() {
+        const styleId = "ai-dock-styles";
+        if (document.getElementById(styleId)) return;
+
+        const style = document.createElement("style");
+        style.id = styleId;
+        style.textContent = `
+            .ai-tabs {
+                display: flex;
+                background: var(--b3-theme-surface);
+                border-bottom: 1px solid var(--b3-border-color);
+                padding: 0 8px;
+            }
+            .ai-tab {
+                padding: 10px 16px;
+                cursor: pointer;
+                font-size: 13px;
+                color: var(--b3-theme-on-surface-light);
+                border-bottom: 2px solid transparent;
+                transition: all 0.2s;
+                opacity: 0.7;
+            }
+            .ai-tab:hover {
+                color: var(--b3-theme-on-surface);
+                opacity: 1;
+            }
+            .ai-tab.active {
+                color: var(--b3-theme-primary);
+                border-bottom-color: var(--b3-theme-primary);
+                font-weight: bold;
+                opacity: 1;
+            }
+            .ai-panel {
+                display: none;
+                flex: 1;
+                flex-direction: column;
+                height: 100%;
+                overflow: hidden;
+            }
+            .ai-panel.active {
+                display: flex;
+            }
+            
+            /* 会议记录按钮动效 */
+            .record-btn-wrapper {
+                position: relative;
+                width: 80px;
+                height: 80px;
+                margin: 0 auto;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                cursor: pointer;
+            }
+            .record-btn {
+                width: 64px;
+                height: 64px;
+                border-radius: 50%;
+                background: var(--b3-theme-primary);
+                box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+                color: #fff;
+                z-index: 2;
+            }
+            .record-btn:hover {
+                transform: scale(1.05);
+                box-shadow: 0 6px 16px rgba(0,0,0,0.3);
+            }
+            .record-btn.recording {
+                background: #ff4d4f;
+                transform: scale(0.95);
+                border-radius: 20px;
+            }
+            .record-ripple {
+                position: absolute;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                width: 100%;
+                height: 100%;
+                border-radius: 50%;
+                background: var(--b3-theme-primary);
+                opacity: 0.2;
+                animation: ripple 1.5s infinite;
+                display: none;
+            }
+            .record-btn-wrapper.active .record-ripple {
+                display: block;
+                background: #ff4d4f;
+            }
+            @keyframes ripple {
+                0% { transform: translate(-50%, -50%) scale(0.8); opacity: 0.4; }
+                100% { transform: translate(-50%, -50%) scale(1.6); opacity: 0; }
+            }
+            
+            .meeting-stat-card {
+                background: var(--b3-theme-surface-lighter);
+                border-radius: 8px;
+                padding: 12px;
+                margin-bottom: 12px;
+                border: 1px solid var(--b3-border-color);
+            }
+        `;
+        document.head.appendChild(style);
+    }
+
+    private renderLayout() {
+        this.element.innerHTML = `
+            <div class="block__icons">
+                <div class="block__logo">
+                    <svg class="block__logoicon"><use xlink:href="#iconSparkles"></use></svg>AI 助手&nbsp;
+                </div>
+                <span class="fn__flex-1"></span>
+                <span data-type="min" class="block__icon b3-tooltips b3-tooltips__w" aria-label="${window.siyuan.languages.min}${updateHotkeyAfterTip(window.siyuan.config.keymap.general.closeTab.custom)}"><svg><use xlink:href="#iconMin"></use></svg></span>
+            </div>
+            
+            <div class="ai-tabs">
+                <div class="ai-tab ${this.activeTab === 'chat' ? 'active' : ''}" data-tab="chat">
+                    <span style="font-size: 14px; margin-right: 4px;">💬</span>智能问答
+                </div>
+                <div class="ai-tab ${this.activeTab === 'meeting' ? 'active' : ''}" data-tab="meeting">
+                    <span style="font-size: 14px; margin-right: 4px;">🎙️</span>会议纪要
+                </div>
+            </div>
+
+            <div class="fn__flex-1" style="position: relative; overflow: hidden;">
+                <!-- 聊天面板 -->
+                <div class="ai-panel ${this.activeTab === 'chat' ? 'active' : ''}" data-panel="chat">
+                    ${this.getChatHTML()}
+                </div>
+
+                <!-- 会议面板 -->
+                <div class="ai-panel ${this.activeTab === 'meeting' ? 'active' : ''}" data-panel="meeting">
+                    ${this.getMeetingHTML()}
+                </div>
+            </div>
+        `;
+    }
+
+    private getChatHTML() {
+        return `
+        <div class="fn__flex-1 ai-chat-container" style="background-color: var(--b3-theme-background); padding: 8px; display: flex; flex-direction: column;">
+            <div class="ai-messages" style="flex: 1; overflow-y: auto; margin-bottom: 8px; border: 1px solid var(--b3-border-color); border-radius: 4px; padding: 8px; background: var(--b3-theme-surface);" data-type="messages">
+                <div class="ai-welcome" style="color: var(--b3-theme-on-surface-light); text-align: center; padding: 20px 10px;">
+                    <div style="font-size: 24px; margin-bottom: 8px;">🤖</div>
+                    <div style="font-weight: bold; margin-bottom: 8px;">AI 文档分析助手</div>
+                    <div style="font-size: 12px; line-height: 1.6;">
+                        选择一个提示词快速开始分析当前文档<br>
+                        分析完成后可以保存到笔记末尾
+                    </div>
+                </div>
+            </div>
+            <div class="ai-prompts" style="margin-bottom: 8px; display: grid; grid-template-columns: 1fr 1fr; gap: 6px;">
+                <button class="b3-button b3-button--outline" data-prompt="总结" style="font-size: 12px;">📝 总结文档</button>
+                <button class="b3-button b3-button--outline" data-prompt="要点" style="font-size: 12px;">🎯 提取要点</button>
+                <button class="b3-button b3-button--outline" data-prompt="续写" style="font-size: 12px;">✍️ 续写内容</button>
+                <button class="b3-button b3-button--outline" data-prompt="优化" style="font-size: 12px;">✨ 优化表达</button>
+                <button class="b3-button b3-button--outline" data-prompt="翻译" style="font-size: 12px;">🌐 翻译</button>
+                <button class="b3-button b3-button--outline" data-prompt="问答" style="font-size: 12px;">💬 问答</button>
+            </div>
+            <div class="ai-input-container" style="display: flex; flex-direction: column; gap: 6px;">
+                <div class="ai-input" style="display: flex; gap: 6px;">
+                    <input type="text" class="b3-text-field fn__flex-1" placeholder="输入问题或选择提示词..." data-type="input" style="font-size: 13px;">
+                    <button class="b3-button b3-button--outline" data-type="send" style="min-width: 60px;">发送</button>
+                </div>
+                <div class="ai-actions" style="display: none; gap: 6px;">
+                    <button class="b3-button b3-button--outline fn__flex-1" data-type="save" style="font-size: 12px;">💾 保存到笔记</button>
+                    <button class="b3-button b3-button--text" data-type="clear" style="font-size: 12px;">🗑️ 清空</button>
+                </div>
+            </div>
+        </div>`;
+    }
+
+    private getMeetingHTML() {
+        const manager = MeetingManager.getInstance();
+        const isRecording = manager.isRecording;
+
+        return `
+        <div class="fn__flex-1" style="background-color: var(--b3-theme-background); padding: 16px; display: flex; flex-direction: column; align-items: center;">
+            
+            <!-- 计时器区域 -->
+            <div style="text-align: center; margin: 32px 0 32px 0; width: 100%;">
+                <div class="meeting-timer" style="font-family: monospace; font-size: 36px; font-weight: bold; color: var(--b3-theme-on-surface); line-height: 1.2; letter-spacing: 2px;">
+                    00:00
+                </div>
+                <div class="meeting-status" style="font-size: 13px; color: var(--b3-theme-on-surface-light); margin-top: 8px;">
+                    ${isRecording ? '正在录音...' : '准备就绪'}
+                </div>
+            </div>
+
+            <!-- 控制按钮区域 -->
+            <div style="width: 100%; display: flex; justify-content: center; margin-bottom: 32px;">
+                <!-- 开始按钮 (未录音时显示) -->
+                <button class="b3-button" id="btn-start-record" data-type="start-record" style="width: 140px; height: 44px; font-size: 16px; font-weight: bold; display: ${isRecording ? 'none' : 'flex'}; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
+                    <svg style="width: 18px; height: 18px; margin-right: 8px;"><use xlink:href="#iconMic"></use></svg>开始录音
+                </button>
+
+                <!-- 录音中控制组 (录音时显示) -->
+                <div id="recording-controls" style="display: ${isRecording ? 'flex' : 'none'}; gap: 16px; width: 100%; justify-content: center;">
+                     <button class="b3-button" data-type="summarize-record" style="flex: 1; height: 44px; font-size: 14px; font-weight: 600; background-color: var(--b3-theme-primary); color: #fff; display: flex; align-items: center; justify-content: center;">
+                        <svg style="width: 16px; height: 16px; margin-right: 6px;"><use xlink:href="#iconSparkles"></use></svg>总结
+                    </button>
+                    <button class="b3-button b3-button--error" data-type="stop-record" style="flex: 1; height: 44px; font-size: 14px; font-weight: 600; background-color: var(--b3-theme-error); color: #fff; display: flex; align-items: center; justify-content: center;">
+                        <svg style="width: 16px; height: 16px; margin-right: 6px;"><use xlink:href="#iconSquare"></use></svg>停止
+                    </button>
+                </div>
+            </div>
+
+            <!-- 紧凑设置卡片 -->
+            <div style="width: 100%; background: var(--b3-theme-surface); border-radius: 8px; padding: 12px; border: 1px solid var(--b3-border-color); margin-bottom: 16px;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div style="display: flex; align-items: center;">
+                        <span style="font-size: 14px; margin-right: 6px;">⚡</span>
+                        <span style="font-size: 13px; font-weight: 500;">自动同步</span>
+                    </div>
+                    <select class="b3-select" id="meeting-interval" style="width: 90px; height: 30px; font-size: 12px;">
+                        <option value="1">1分钟</option>
+                        <option value="2">2分钟</option>
+                        <option value="5">5分钟</option>
+                        <option value="10">10分钟</option>
+                    </select>
+                </div>
+            </div>
+
+            <div style="flex: 1;"></div>
+            
+            <!-- 底部简要统计 -->
+            <div style="width: 100%; display: flex; justify-content: space-between; padding: 12px 16px; border-top: 1px solid var(--b3-border-color); font-size: 12px; color: var(--b3-theme-on-surface-light);">
+                <span>今日会议: <strong id="meeting-count" style="color: var(--b3-theme-on-surface);">0</strong></span>
+                <span>总时长: <strong id="meeting-duration" style="color: var(--b3-theme-on-surface);">0m</strong></span>
+            </div>
+
+        </div>`;
     }
 
     private bindEvents() {
@@ -109,6 +297,7 @@ export class AI extends Model {
             while (target && !target.isEqualNode(this.element)) {
                 const type = target.getAttribute("data-type");
                 const prompt = target.getAttribute("data-prompt");
+                const tab = target.getAttribute("data-tab");
 
                 if (type === "min") {
                     getDockByType("ai").toggleModel("ai", false, true);
@@ -126,12 +315,37 @@ export class AI extends Model {
                     this.clearMessages();
                     event.preventDefault();
                     break;
+                } else if (type === "start-record") {
+                    this.startRecord();
+                    event.preventDefault();
+                    break;
+                } else if (type === "stop-record") {
+                    this.stopRecord();
+                    event.preventDefault();
+                    break;
+                } else if (type === "summarize-record") {
+                    this.summarizeRecord();
+                    event.preventDefault();
+                    break;
+                } else if (tab) {
+                    this.switchTab(tab as "chat" | "meeting");
+                    event.preventDefault();
+                    break;
                 } else if (prompt) {
                     this.handlePromptClick(prompt);
                     event.preventDefault();
                     break;
                 }
                 target = target.parentElement;
+            }
+        });
+
+        // 监听间隔设置变化
+        this.element.addEventListener("change", (event: Event) => {
+            const target = event.target as HTMLInputElement;
+            if (target.id === "meeting-interval") {
+                const manager = MeetingManager.getInstance();
+                manager.setInterval(parseInt(target.value));
             }
         });
 
@@ -145,6 +359,49 @@ export class AI extends Model {
                 }
             });
         }
+    }
+
+    private switchTab(tab: "chat" | "meeting") {
+        this.activeTab = tab;
+
+        // 更新 Tab 样式
+        this.element.querySelectorAll('.ai-tab').forEach(el => {
+            if (el.getAttribute('data-tab') === tab) {
+                el.classList.add('active');
+            } else {
+                el.classList.remove('active');
+            }
+        });
+
+        // 更新面板显示
+        this.element.querySelectorAll('.ai-panel').forEach(el => {
+            if (el.getAttribute('data-panel') === tab) {
+                el.classList.add('active');
+            } else {
+                el.classList.remove('active');
+            }
+        });
+    }
+
+    private async startRecord() {
+        const manager = MeetingManager.getInstance();
+        const select = this.element.querySelector('#meeting-interval') as HTMLSelectElement;
+        const interval = select ? parseInt(select.value) : 1;
+        await manager.startRecording(interval);
+    }
+
+    private stopRecord() {
+        MeetingManager.getInstance().stopRecording();
+        // 强制重置 UI，确保立即响应
+        this.updateMeetingUI({
+            isRecording: false,
+            isTranscribing: false,
+            duration: 0
+        });
+    }
+
+    private summarizeRecord() {
+        MeetingManager.getInstance().uploadAndTranscribe();
     }
 
     private handlePromptClick(promptType: string) {
@@ -210,32 +467,84 @@ export class AI extends Model {
         });
     }
 
-    private getCurrentDocContent(): string {
-        // 获取当前激活的编辑器 - 使用多种方法确保能获取到
-        const models = getAllModels();
-        console.log("[AI] 编辑器总数:", models.editor.length);
+    private initMeetingListener() {
+        const manager = MeetingManager.getInstance();
 
+        // 初始化设置
+        const select = this.element.querySelector('#meeting-interval') as HTMLSelectElement;
+        if (select) {
+            select.value = manager.getInterval().toString();
+        }
+
+        manager.setStatusCallback((status) => {
+            this.updateMeetingUI(status);
+        });
+
+        // 监听转录完成事件
+        window.addEventListener("neura-meeting-transcription", ((e: CustomEvent) => {
+            const content = e.detail;
+            if (!content) return;
+
+            const editor = this.getBestEditor();
+            if (editor && editor.editor?.protyle) {
+                // 使用 insertHTML 插入内容
+                const protyle = editor.editor.protyle;
+                const htmlContent = protyle.lute.Md2BlockDOM(content);
+                insertHTML(htmlContent, protyle, true);
+
+                // 聚焦并滚动到底部
+                setTimeout(() => {
+                    const lastBlock = protyle.wysiwyg.element.lastElementChild;
+                    if (lastBlock) {
+                        focusBlock(lastBlock);
+                        lastBlock.scrollIntoView({ behavior: "smooth", block: "end" });
+                    }
+                }, 200);
+            } else {
+                window.siyuan.showMessage?.("未找到活动文档，会议纪要无法插入", 3000, "error");
+            }
+        }) as EventListener);
+    }
+
+    private updateMeetingUI(status: any) {
+        const startBtn = this.element.querySelector('#btn-start-record') as HTMLElement;
+        const controls = this.element.querySelector('#recording-controls') as HTMLElement;
+        const statusText = this.element.querySelector('.meeting-status');
+        const timerText = this.element.querySelector('.meeting-timer');
+
+        if (status.isRecording) {
+            if (startBtn) startBtn.style.display = 'none';
+            if (controls) controls.style.display = 'flex';
+
+            if (statusText) statusText.textContent = status.isTranscribing ? "✨ 正在转录中..." : "🔴 正在录音...";
+        } else {
+            if (startBtn) startBtn.style.display = 'flex';
+            if (controls) controls.style.display = 'none';
+
+            if (statusText) statusText.textContent = "准备就绪";
+        }
+
+        if (timerText) {
+            const m = Math.floor(status.duration / 60).toString().padStart(2, '0');
+            const s = (status.duration % 60).toString().padStart(2, '0');
+            timerText.textContent = `${m}:${s}`;
+        }
+    }
+
+    private getBestEditor() {
+        const models = getAllModels();
         let activeEditor = null;
 
-        // 方法1: 查找焦点编辑器 (item--focus)
         activeEditor = models.editor.find(item =>
             item.parent?.headElement?.classList.contains("item--focus")
         );
-        if (activeEditor) {
-            console.log("[AI] 方法1找到焦点编辑器");
-        }
 
-        // 方法2: 查找 fn__flex-1--focus 类
         if (!activeEditor) {
             activeEditor = models.editor.find(item =>
                 item.parent?.headElement?.classList.contains("fn__flex-1--focus")
             );
-            if (activeEditor) {
-                console.log("[AI] 方法2找到焦点编辑器");
-            }
         }
 
-        // 方法3: 查找包含 data-activetime 最新的编辑器
         if (!activeEditor && models.editor.length > 0) {
             let latestTime = 0;
             models.editor.forEach(item => {
@@ -245,27 +554,26 @@ export class AI extends Model {
                     activeEditor = item;
                 }
             });
-            if (activeEditor) {
-                console.log("[AI] 方法3找到最近活动的编辑器");
-            }
         }
 
-        // 方法4: 直接使用第一个编辑器
         if (!activeEditor && models.editor.length > 0) {
             activeEditor = models.editor[0];
-            console.log("[AI] 方法4使用第一个编辑器");
         }
+
+        return activeEditor;
+    }
+
+    private getCurrentDocContent(): string {
+        const activeEditor = this.getBestEditor();
 
         if (activeEditor && activeEditor.editor?.protyle) {
             this.currentEditor = activeEditor.editor;
             const wysiwygElement = activeEditor.editor.protyle.wysiwyg.element;
             const content = wysiwygElement.textContent || "";
-            console.log("[AI] 获取到文档内容长度:", content.length);
-            console.log("[AI] 文档内容前200字符:", content.substring(0, 200));
             return content;
         }
 
-        console.log("[AI] 警告：未能获取到任何编辑器内容！");
+        // console.log("[AI] 警告：未能获取到任何编辑器内容！");
         return "";
     }
 

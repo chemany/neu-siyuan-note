@@ -8,8 +8,6 @@ import { setEditMode } from "../util/setEditMode";
 import { RecordMedia } from "../util/RecordMedia";
 import { hideMessage, showMessage } from "../../dialog/message";
 import { uploadFiles } from "../upload";
-import { MeetingManager, IMeetingStatus } from "../../meeting/MeetingManager";
-import { transaction } from "../wysiwyg/transaction";
 import { focusByRange } from "../util/selection";
 import { hasClosestBlock, hasTopClosestByClassName } from "../util/hasClosest";
 import { needSubscribe } from "../../util/needSubscribe";
@@ -42,7 +40,7 @@ export class Breadcrumb {
     private mediaRecorder: RecordMedia;
     private id: string;
     private messageId: string;
-    private indicatorElement: HTMLElement | null = null;
+
 
     constructor(protyle: IProtyle) {
         const element = document.createElement("div");
@@ -63,7 +61,7 @@ export class Breadcrumb {
 <button class="protyle-breadcrumb__icon fn__none ariaLabel" aria-label="${updateHotkeyTip(window.siyuan.config.keymap.editor.general.exitFocus.custom)}" data-type="exit-focus">${window.siyuan.languages.exitFocus}</button>
 ${padHTML}
 <button class="block__icon fn__flex-center ariaLabel${window.siyuan.config.readonly ? " fn__none" : ""}" aria-label="${window.siyuan.languages.lockEdit}" data-type="readonly" data-subtype="unlock"><svg><use xlink:href="#iconUnlock"></use></svg></button>
-<button class="block__icon fn__flex-center ariaLabel" data-type="record" aria-label="AI 会议纪要 (左键开始/停止，右键设置)"><svg><use xlink:href="#iconRecord"></use></svg></button>
+
 <button class="block__icon fn__flex-center ariaLabel" data-type="doc" aria-label="${isMac() ? window.siyuan.languages.gutterTip2 : window.siyuan.languages.gutterTip2.replace("⇧", "Shift+")}"><svg><use xlink:href="#iconFile"></use></svg></button>
 <button class="block__icon fn__flex-center ariaLabel" data-type="more" aria-label="${window.siyuan.languages.more}"><svg><use xlink:href="#iconMore"></use></svg></button>
 <button class="block__icon fn__flex-center fn__none ariaLabel" data-type="context" aria-label="${window.siyuan.languages.context}"><svg><use xlink:href="#iconAlignCenter"></use></svg></button>`;
@@ -122,11 +120,7 @@ ${padHTML}
                     event.stopPropagation();
                     event.preventDefault();
                     break;
-                } else if (type === "record") {
-                    this.handleAIRecordClick(protyle, target);
-                    event.stopPropagation();
-                    event.preventDefault();
-                    break;
+
                 } else if (type === "exit-focus") {
                     zoomOut({ protyle, id: protyle.block.rootID, focusId: protyle.block.id });
                     event.stopPropagation();
@@ -183,19 +177,7 @@ ${padHTML}
                 target = target.parentElement;
             }
         });
-        element.addEventListener("contextmenu", (event) => {
-            let target = event.target as HTMLElement;
-            while (target && !target.isEqualNode(element)) {
-                const type = target.getAttribute("data-type");
-                if (type === "record") {
-                    this.showMeetingSettings(protyle);
-                    event.stopPropagation();
-                    event.preventDefault();
-                    break;
-                }
-                target = target.parentElement;
-            }
-        });
+
         /// #if !MOBILE
         element.addEventListener("mouseleave", () => {
             protyle.wysiwyg.element.querySelectorAll(".protyle-wysiwyg--hl").forEach(item => {
@@ -674,208 +656,9 @@ ${padHTML}
         /// #endif
     }
 
-    public async handleAIRecordClick(protyle: IProtyle, targetElement: HTMLElement) {
-        const manager = MeetingManager.getInstance();
-        if (manager.isRecording) {
-            manager.stopRecording();
-            targetElement.classList.remove("block__icon--active");
-            if (this.indicatorElement) {
-                this.indicatorElement.remove();
-                this.indicatorElement = null;
-            }
-        } else {
-            await manager.startRecording(manager.getInterval());
-            targetElement.classList.add("block__icon--active");
-
-            // 设置状态回调
-            manager.setStatusCallback((status) => {
-                this.updateIndicator(status);
-            });
-
-            // 监听转录插入事件（仅在录制期间有效）
-            const handleTranscription = (e: CustomEvent) => {
-                const content = e.detail;
-                if (!content) return;
-
-                const range = protyle.toolbar?.range || getEditorRange(protyle.wysiwyg.element);
-                if (protyle.block.rootID) {
-                    const id = Lute.NewNodeID();
-                    const html = `<div data-node-id="${id}" data-type="NodeBlockquote" class="bq">${content}</div>`;
-
-                    // 1. 同步到内核 (持久化)
-                    transaction(protyle, [{
-                        action: "insert",
-                        data: html,
-                        parentID: protyle.block.rootID,
-                        previousID: protyle.wysiwyg.element.lastElementChild?.getAttribute("data-node-id") || undefined
-                    }], [{
-                        action: "delete",
-                        id: id,
-                    }]);
-
-                    // 2. 实时插入 DOM (即时效果，无需刷新)
-                    protyle.wysiwyg.element.insertAdjacentHTML("beforeend", html);
-
-                    // 3. 自动滚动到新插入的内容并聚焦
-                    setTimeout(() => {
-                        const newElement = protyle.wysiwyg.element.querySelector(`[data-node-id="${id}"]`);
-                        if (newElement) {
-                            newElement.scrollIntoView({ behavior: 'smooth', block: 'end' });
-                            focusByRange(getEditorRange(newElement));
-                        }
-                    }, 100);
-                }
-            };
-
-            window.addEventListener("neura-meeting-transcription", handleTranscription as any, { once: false });
-
-            // 当录制停止时移除监听
-            const checkStop = setInterval(() => {
-                if (!manager.isRecording) {
-                    window.removeEventListener("neura-meeting-transcription", handleTranscription as any);
-                    clearInterval(checkStop);
-                }
-            }, 1000);
-        }
-    }
-
-    private showMeetingSettings(protyle: IProtyle) {
-        const manager = MeetingManager.getInstance();
-        confirmDialog("⚙️ AI 会议纪要设置", `
-            <div class="b3-label">
-                <div class="fn__flex">
-                    <span class="fn__flex-center">自动转录间隔 (分钟)</span>
-                    <span class="fn__space"></span>
-                    <input class="b3-text-field fn__flex-1" type="number" value="${manager.getInterval()}" min="1" max="60" id="meetingIntervalInput">
-                </div>
-                <div class="b3-label__text">建议设置为 1-5 分钟。录音将在此间隔后自动上传并生成内容块。</div>
-            </div>
-        `, () => {
-            const input = document.getElementById("meetingIntervalInput") as HTMLInputElement;
-            const val = parseInt(input.value);
-            if (val > 0) {
-                manager.setInterval(val);
-                showMessage(`设置成功: 每 ${val} 分钟自动转录`);
-            }
-        });
-    }
-
-    private updateIndicator(status: IMeetingStatus, protyle?: IProtyle) {
-        if (!this.indicatorElement) {
-            this.indicatorElement = document.createElement("div");
-            this.indicatorElement.style.cssText = `
-                position: fixed; 
-                bottom: 24px; 
-                right: 24px; 
-                background: rgba(40, 44, 52, 0.9); 
-                backdrop-filter: blur(12px); 
-                -webkit-backdrop-filter: blur(12px); 
-                color: #fff; 
-                padding: 16px; 
-                border-radius: 16px; 
-                z-index: 1000; 
-                font-family: var(--b3-font-family); 
-                box-shadow: 0 8px 32px rgba(0,0,0,0.4); 
-                border: 1px solid rgba(255, 255, 255, 0.15); 
-                transition: all 0.3s cubic-bezier(0.19, 1, 0.22, 1);
-                min-width: 240px;
-                display: flex;
-                flex-direction: column;
-                gap: 12px;
-                pointer-events: auto;
-            `;
-            document.body.appendChild(this.indicatorElement);
-
-            // 样式增强
-            if (!document.getElementById("neura-meeting-indicator-style")) {
-                const style = document.createElement("style");
-                style.id = "neura-meeting-indicator-style";
-                style.innerHTML = `
-                    @keyframes neura-pulse {
-                        0% { opacity: 0.6; transform: scale(0.9); }
-                        50% { opacity: 1; transform: scale(1.1); }
-                        100% { opacity: 0.6; transform: scale(0.9); }
-                    }
-                    .neura-meeting-dot {
-                        width: 10px; height: 10px; background: #ff4d4f; border-radius: 50%;
-                        animation: neura-pulse 1.5s infinite ease-in-out;
-                        box-shadow: 0 0 8px #ff4d4f;
-                    }
-                    .neura-btn-mini {
-                        background: rgba(255,255,255,0.1);
-                        border: none; color: #eee; padding: 4px 8px; border-radius: 4px;
-                        font-size: 11px; cursor: pointer; transition: background 0.2s;
-                    }
-                    .neura-btn-mini:hover { background: rgba(255,255,255,0.2); color: #fff; }
-                    .neura-btn-stop { color: #ff4d4f; }
-                    .neura-btn-stop:hover { background: rgba(255,77,79,0.2); }
-                `;
-                document.head.appendChild(style);
-            }
-        }
-
-        const formatTime = (s: number) => {
-            const m = Math.floor(s / 60);
-            const sec = s % 60;
-            return `${m}:${sec.toString().padStart(2, '0')}`;
-        };
-
-        const statusText = status.isTranscribing
-            ? '<span style="color: #1890ff; font-weight: bold;">✨ AI 思考中...</span>'
-            : '<span style="opacity: 0.8">🎙️ 会议记录中</span>';
-
-        this.indicatorElement.innerHTML = `
-            <div style="display: flex; justify-content: space-between; align-items: center;">
-                <div style="display: flex; align-items: center; gap: 8px; font-size: 13px;">
-                    <div class="neura-meeting-dot"></div>
-                    ${statusText}
-                </div>
-                <div style="display: flex; gap: 6px;">
-                    <button class="neura-btn-mini" id="manualTranscribeBtn" title="立即同步到文档">同步</button>
-                    <button class="neura-btn-mini neura-btn-stop" id="stopMeetingBtn" title="停止录制并关闭">结束</button>
-                </div>
-            </div>
-            <div style="display: flex; justify-content: space-between; align-items: baseline;">
-                <div style="display: flex; flex-direction: column;">
-                    <div style="font-size: 28px; font-weight: 700; font-family: 'JetBrains Mono', monospace; line-height: 1;">${formatTime(status.duration)}</div>
-                </div>
-                <div style="text-align: right;">
-                    <div style="font-size: 10px; opacity: 0.4; text-transform: uppercase; margin-bottom: 2px;">Auto Sync In</div>
-                    <div style="font-size: 14px; color: #faad14; font-weight: 600; font-family: 'JetBrains Mono';">${formatTime(status.nextUploadCountdown)}</div>
-                </div>
-            </div>
-        `;
-
-        // 绑定事件
-        const stopBtn = this.indicatorElement.querySelector("#stopMeetingBtn");
-        const syncBtn = this.indicatorElement.querySelector("#manualTranscribeBtn");
-
-        if (stopBtn && !stopBtn.getAttribute("data-bound")) {
-            stopBtn.addEventListener("click", () => {
-                MeetingManager.getInstance().stopRecording();
-                this.indicatorElement?.remove();
-                this.indicatorElement = null;
-                // 找到对应的面包屑按钮取消激活状态
-                document.querySelectorAll('[data-type="record"]').forEach(el => el.classList.remove("block__icon--active"));
-            });
-            stopBtn.setAttribute("data-bound", "true");
-        }
-
-        if (syncBtn && !syncBtn.getAttribute("data-bound")) {
-            syncBtn.addEventListener("click", () => {
-                MeetingManager.getInstance().uploadAndTranscribe();
-            });
-            syncBtn.setAttribute("data-bound", "true");
-        }
-    }
-
     public hide() {
         if (isMobile()) {
             return;
-        }
-        if (this.indicatorElement) {
-            this.indicatorElement.remove();
-            this.indicatorElement = null;
         }
         this.element.classList.add("protyle-breadcrumb__bar--hide");
         window.siyuan.hideBreadcrumb = true;

@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
@@ -356,6 +357,25 @@ func (s *MeetingService) TranscribeAudio(audioData []byte) (*TranscribeAudioResp
 	}, nil
 }
 
+// cleanASRTags 清理 FunASR 返回的标签，只保留纯文本
+// 包括语言标签 (<|zh|>, <|en|>, <|ja|>)、情感标签 (<|NEUTRAL|>, <|EMO_UNKNOWN|>)、
+// 类型标签 (<|Speech|>, <|BGM|>)、格式标签 (<|withitn|>) 等
+func cleanASRTags(text string) string {
+	if text == "" {
+		return text
+	}
+	
+	// 使用正则表达式移除所有 <|...|> 格式的标签
+	// 匹配 <| 和 |> 之间的任何内容
+	re := regexp.MustCompile(`<\|[^|]*\|>`)
+	cleaned := re.ReplaceAllString(text, "")
+	
+	// 清理多余的空格
+	cleaned = strings.TrimSpace(cleaned)
+	
+	return cleaned
+}
+
 // callASR 调用 ASR 服务 (WebSocket 模式)
 func (s *MeetingService) callASR(audioData []byte) (string, error) {
 	// 补全末尾斜杠，有些服务器对路径很敏感
@@ -435,12 +455,9 @@ func (s *MeetingService) callASR(audioData []byte) (string, error) {
 
 		logging.LogDebugf("ASR: Start sending PCM data (%d bytes)...", len(pcmData))
 
-		// 16000Hz, 16bit (2bytes), Mono => 32000 bytes/sec
-		// 分块大小：0.2秒的数据 => 6400 bytes
-		const chunkSize = 6400 // ~200ms
-		// 为了保证 FunASR 能够有足够的时间处理 VAD，我们使用 1:1 实时速度发送
-		// 或者稍微快一点点 (0.9x)。这里设为 200ms 对应 200ms 数据。
-		const sleepInterval = 200 * time.Millisecond
+		// 直接批量发送，无需延迟
+		// 分块大小：使用较大的 chunk 以减少网络开销，但不超过 64KB
+		const chunkSize = 64000
 
 		for i := 0; i < len(pcmData); i += chunkSize {
 			end := i + chunkSize
@@ -452,8 +469,6 @@ func (s *MeetingService) callASR(audioData []byte) (string, error) {
 				sendErrChan <- fmt.Errorf("failed to send audio chunk: %v", err)
 				return
 			}
-
-			time.Sleep(sleepInterval)
 		}
 
 		logging.LogDebugf("ASR: Audio data sent, sending end signal...")
@@ -520,7 +535,11 @@ func (s *MeetingService) callASR(audioData []byte) (string, error) {
 				logging.LogDebugf("ASR: Appending unfinalized tail: '%s'", latestPartialText)
 				fullTranscriptBuilder.WriteString(latestPartialText)
 			}
-			return fullTranscriptBuilder.String(), nil
+			// 清理 ASR 返回的标签
+			rawText := fullTranscriptBuilder.String()
+			cleanedText := cleanASRTags(rawText)
+			logging.LogDebugf("ASR: Raw text length: %d, Cleaned text length: %d", len(rawText), len(cleanedText))
+			return cleanedText, nil
 		}
 
 		messageCount++
@@ -544,6 +563,15 @@ func (s *MeetingService) callASR(audioData []byte) (string, error) {
 			logging.LogDebugf("ASR: 2pass-offline result: '%s'", result.Text)
 			fullTranscriptBuilder.WriteString(result.Text)
 			latestPartialText = ""
+			
+			// 如果 is_final 为 true，说明识别完成，立即返回
+			if result.IsFinal {
+				logging.LogDebugf("ASR: Recognition completed with is_final=true")
+				rawText := fullTranscriptBuilder.String()
+				cleanedText := cleanASRTags(rawText)
+				logging.LogDebugf("ASR: Raw text length: %d, Cleaned text length: %d", len(rawText), len(cleanedText))
+				return cleanedText, nil
+			}
 		} else if result.IsFinal {
 			logging.LogDebugf("ASR: Sentence finalized: '%s'", result.Text)
 			if result.Text != "" {
@@ -561,7 +589,8 @@ func (s *MeetingService) callASR(audioData []byte) (string, error) {
 // GenerateSummary 生成摘要
 func (s *MeetingService) GenerateSummary(text string) (string, error) {
 	// 使用配置中的 LLM 设置
-	llmURL := llmEndpoint + "/chat/completions"
+	baseURL := strings.TrimSuffix(llmEndpoint, "/")
+	llmURL := baseURL + "/chat/completions"
 	apiKey := llmAPIKey
 	modelName := llmModelName
 

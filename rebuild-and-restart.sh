@@ -21,6 +21,11 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 echo "✅ 前端构建成功 (输出目录: stage/build/desktop/)"
+echo "🔄 同步构建产物到 app 目录 (确保 Web 端加载最新代码)..."
+rm -rf ../kernel/stage/build/app
+mkdir -p ../kernel/stage/build/app
+cp -r ../kernel/stage/build/desktop/* ../kernel/stage/build/app/
+echo "✅ 同步完成"
 echo ""
 
 # 释放内存缓冲

@@ -53,11 +53,11 @@ export class MeetingManager {
                 const inputData = e.inputBuffer.getChannelData(0);
                 // 深度拷贝数据
                 this.pcmBuffer.push(new Float32Array(inputData));
-                
+
                 // 诊断：统计收集的音频数据
                 this.audioProcessCount++;
                 this.totalSamplesCollected += inputData.length;
-                
+
                 // 每 100 次打印一次诊断信息
                 if (this.audioProcessCount % 100 === 0) {
                     console.log("Audio process diagnostic:", {
@@ -100,6 +100,16 @@ export class MeetingManager {
             this.stream.getTracks().forEach(track => track.stop());
             this.stream = null;
         }
+
+        if (this.statusCallback) {
+            this.statusCallback({
+                isRecording: false,
+                isTranscribing: false,
+                duration: 0,
+                nextUploadCountdown: 0
+            });
+        }
+
         console.log("Meeting recording stopped");
     }
 
@@ -157,11 +167,11 @@ export class MeetingManager {
 
         // 1. 合并 PCM 数据并转换为 WAV 格式
         const audioBlob = this.encodeWAV(this.pcmBuffer);
-        
+
         // 诊断：计算音频数据的详细信息
         const totalSamples = this.pcmBuffer.reduce((acc, s) => acc + s.length, 0);
         const estimatedDuration = (totalSamples / 16000).toFixed(2);
-        
+
         console.log("Audio encoding completed:", {
             blobSize: audioBlob.size,
             blobType: audioBlob.type,
@@ -171,7 +181,7 @@ export class MeetingManager {
             bytesPerSample: 2,
             expectedSize: totalSamples * 2 + 44
         });
-        
+
         this.pcmBuffer = []; // 清空缓冲区用于下一次采集
 
         const formData = new FormData();
