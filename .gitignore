@@ -70,6 +70,7 @@ workspace/
 data/temp/
 data/history/
 data/storage/
+data/users/users.json
 **/snippets/
 
 # ========================================
