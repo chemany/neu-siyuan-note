@@ -155,6 +155,20 @@ export class AI extends Model {
                 margin-bottom: 12px;
                 border: 1px solid var(--b3-border-color);
             }
+            /* 解决无法选择和复制文本的问题 */
+            .sy__ai .ai-messages {
+                user-select: text !important;
+                -webkit-user-select: text !important;
+            }
+            .ai-messages div {
+                user-select: text !important;
+                -webkit-user-select: text !important;
+            }
+            /* 优化选中时的背景色 */
+            .ai-messages ::selection {
+                background: var(--b3-theme-primary-lighter);
+                color: var(--b3-theme-on-primary);
+            }
         `;
         document.head.appendChild(style);
     }
@@ -194,33 +208,36 @@ export class AI extends Model {
 
     private getChatHTML() {
         return `
-        <div class="fn__flex-1 ai-chat-container" style="background-color: var(--b3-theme-background); padding: 8px; display: flex; flex-direction: column;">
-            <div class="ai-messages" style="flex: 1; overflow-y: auto; margin-bottom: 8px; border: 1px solid var(--b3-border-color); border-radius: 4px; padding: 8px; background: var(--b3-theme-surface);" data-type="messages">
-                <div class="ai-welcome" style="color: var(--b3-theme-on-surface-light); text-align: center; padding: 20px 10px;">
-                    <div style="font-size: 24px; margin-bottom: 8px;">🤖</div>
-                    <div style="font-weight: bold; margin-bottom: 8px;">AI 文档分析助手</div>
-                    <div style="font-size: 12px; line-height: 1.6;">
-                        选择一个提示词快速开始分析当前文档<br>
-                        分析完成后可以保存到笔记末尾
+        <div class="fn__flex-1 ai-chat-container" style="background-color: var(--b3-theme-background); display: flex; flex-direction: column; height: 100%; overflow: hidden;">
+            <div class="ai-messages" style="flex: 1; overflow-y: auto; padding: 16px; background: var(--b3-theme-surface);" data-type="messages">
+                <div class="ai-welcome" style="color: var(--b3-theme-on-surface-light); text-align: center; padding: 40px 10px;">
+                    <div style="font-size: 32px; margin-bottom: 12px;">🤖</div>
+                    <div style="font-weight: bold; margin-bottom: 8px;">AI 智能助手</div>
+                    <div style="font-size: 13px; opacity: 0.8; line-height: 1.6;">
+                        您可以针对当前内容提问，<br>或使用下方的快捷功能。
                     </div>
                 </div>
             </div>
-            <div class="ai-prompts" style="margin-bottom: 8px; display: grid; grid-template-columns: 1fr 1fr; gap: 6px;">
-                <button class="b3-button b3-button--outline" data-prompt="总结" style="font-size: 12px;">📝 总结文档</button>
-                <button class="b3-button b3-button--outline" data-prompt="要点" style="font-size: 12px;">🎯 提取要点</button>
-                <button class="b3-button b3-button--outline" data-prompt="续写" style="font-size: 12px;">✍️ 续写内容</button>
-                <button class="b3-button b3-button--outline" data-prompt="优化" style="font-size: 12px;">✨ 优化表达</button>
-                <button class="b3-button b3-button--outline" data-prompt="翻译" style="font-size: 12px;">🌐 翻译</button>
-                <button class="b3-button b3-button--outline" data-prompt="问答" style="font-size: 12px;">💬 问答</button>
-            </div>
-            <div class="ai-input-container" style="display: flex; flex-direction: column; gap: 6px;">
-                <div class="ai-input" style="display: flex; gap: 6px;">
-                    <input type="text" class="b3-text-field fn__flex-1" placeholder="输入问题或选择提示词..." data-type="input" style="font-size: 13px;">
-                    <button class="b3-button b3-button--outline" data-type="send" style="min-width: 60px;">发送</button>
+            
+            <div style="padding: 12px; background: var(--b3-theme-surface); border-top: 1px solid var(--b3-border-color); flex-shrink: 0;">
+                <div class="ai-prompts" style="margin-bottom: 10px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px;">
+                    <button class="b3-button b3-button--outline" data-prompt="总结" style="font-size: 11px; padding: 6px 2px;">📝 总结全文</button>
+                    <button class="b3-button b3-button--outline" data-prompt="要点" style="font-size: 11px; padding: 6px 2px;">🎯 提取要点</button>
+                    <button class="b3-button b3-button--outline" data-prompt="翻译" style="font-size: 11px; padding: 6px 2px;">🌐 翻译内容</button>
+                    <button class="b3-button b3-button--outline" data-prompt="润色" style="font-size: 11px; padding: 6px 2px;">✍️ 文章润色</button>
+                    <button class="b3-button b3-button--outline" data-prompt="解释" style="font-size: 11px; padding: 6px 2px;">💡 解释概念</button>
+                    <button class="b3-button b3-button--outline" data-prompt="续写" style="font-size: 11px; padding: 6px 2px;">� 继续写作</button>
                 </div>
-                <div class="ai-actions" style="display: none; gap: 6px;">
-                    <button class="b3-button b3-button--outline fn__flex-1" data-type="save" style="font-size: 12px;">💾 保存到笔记</button>
-                    <button class="b3-button b3-button--text" data-type="clear" style="font-size: 12px;">🗑️ 清空</button>
+                
+                <div class="ai-input-container" style="display: flex; flex-direction: column; gap: 8px;">
+                    <div class="ai-input" style="display: flex; gap: 8px;">
+                        <input type="text" class="b3-text-field fn__flex-1" placeholder="在此输入您的问题..." data-type="input" style="padding: 8px 12px; font-size: 13px;">
+                        <button class="b3-button b3-button--info" data-type="send" style="padding: 0 16px;">发送</button>
+                    </div>
+                    <div class="ai-actions" style="display: none; justify-content: space-between; align-items: center;">
+                        <button class="b3-button b3-button--cancel" data-type="save" style="font-size: 11px; padding: 4px 12px;">💾 保存至笔记</button>
+                        <button class="b3-button b3-button--text" data-type="clear" style="font-size: 11px; color: var(--b3-theme-on-surface-light);">清空对话</button>
+                    </div>
                 </div>
             </div>
         </div>`;
@@ -269,10 +286,11 @@ export class AI extends Model {
                         <span style="font-size: 13px; font-weight: 500;">自动同步</span>
                     </div>
                     <select class="b3-select" id="meeting-interval" style="width: 90px; height: 30px; font-size: 12px;">
-                        <option value="1">1分钟</option>
-                        <option value="2">2分钟</option>
-                        <option value="5">5分钟</option>
-                        <option value="10">10分钟</option>
+                        <option value="10">10秒</option>
+                        <option value="30">30秒</option>
+                        <option value="60">1分钟</option>
+                        <option value="120">2分钟</option>
+                        <option value="300">5分钟</option>
                     </select>
                 </div>
             </div>
@@ -407,12 +425,12 @@ export class AI extends Model {
     private handlePromptClick(promptType: string) {
         const inputElement = this.element.querySelector('[data-type="input"]') as HTMLInputElement;
         const promptTexts: { [key: string]: string } = {
-            "总结": "请总结这篇文档的主要内容",
-            "要点": "请提取这篇文档的关键要点",
-            "续写": "请根据当前内容继续写作",
-            "优化": "请优化这篇文档的表达和结构",
-            "翻译": "请将这篇文档翻译成英文",
-            "问答": "请回答关于这篇文档的问题："
+            "总结": "请总结这篇文档的内容",
+            "要点": "请提取这篇文档的核心要点",
+            "翻译": "请将这段内容翻译成中文",
+            "润色": "请润色这段文字，使其表达更专业",
+            "解释": "请详细解释提到的核心概念",
+            "续写": "请基于当前上下文继续写作"
         };
 
         if (inputElement && promptTexts[promptType]) {
@@ -438,15 +456,17 @@ export class AI extends Model {
         // 添加用户消息
         this.addMessage("user", userMessage);
 
-        // 获取当前文档内容
+        // 获取当前文档内容、引用附件和笔记本ID
         const docContent = this.getCurrentDocContent();
+        const activeAttachments = this.getDocumentAttachments();
+        const notebookId = this.currentEditor?.protyle?.notebookId || "";
 
         // 显示加载状态
         const loadingMsg = "🤔 正在思考中...";
         this.addMessage("assistant", loadingMsg);
 
         // 调用真实的AI API
-        this.callAI(userMessage, docContent).then(aiResponse => {
+        this.callAI(userMessage, docContent, activeAttachments, notebookId).then(aiResponse => {
             // 移除加载消息
             this.messages.pop();
             // 添加真实的AI回复
@@ -758,49 +778,30 @@ export class AI extends Model {
         return attachmentContent;
     }
 
-    private async callAI(question: string, docContent: string): Promise<string> {
+    private async callAI(question: string, docContent: string, activeAttachments: string[] = [], notebookId: string = ""): Promise<string> {
         const messages = [];
 
         // 调试日志
-        console.log("[AI] callAI被调用，docContent长度:", docContent?.length || 0);
+        console.log("[AI] callAI被调用，准备依靠后端 RAG 增强");
 
-        // 获取并解析附件内容
-        const attachments = this.getDocumentAttachments();
-        let attachmentContent = "";
-        if (attachments.length > 0) {
-            attachmentContent = await this.parseAttachments(attachments);
-        }
-
-        // 1. 构建系统消息（始终放在第一条）
+        // 1. 构建系统消息（主要包含当前文档正文）
         let systemContent = "";
         if (docContent && docContent.trim()) {
-            const docMaxLength = 4000;
-            systemContent += `【文档正文内容】\n${docContent.substring(0, docMaxLength)}${docContent.length > docMaxLength ? "...(正文已截断)" : ""}\n`;
+            const docMaxLength = 3000; // 降低限制以适配 20k Token 总窗口，确保存量消息不超限
+            systemContent += `【当前活动文档正文】\n${docContent.substring(0, docMaxLength)}${docContent.length > docMaxLength ? "...(正文已截断)" : ""}\n`;
         }
+        messages.push({
+            role: "system",
+            content: `你是一个智能文档助手。后端已自动为你检索并注入了相关的附件 RAG 上下文或全文总结参考。
+请优先参考注入的【相关片段】或【所有相关附件】内容回答用户问题。
+${systemContent}`
+        });
 
-        if (attachmentContent) {
-            const attachMaxLength = 4000;
-            const truncatedAttachment = attachmentContent.length > attachMaxLength
-                ? attachmentContent.substring(0, attachMaxLength) + "...(附件内容已截断)"
-                : attachmentContent;
-            systemContent += `\n【文档附件内容】${truncatedAttachment}`;
-        }
-
-        if (systemContent.trim()) {
-            messages.push({
-                role: "system",
-                content: `你是一个文档分析助手。请基于提供的文档内容及之前的对话历史，回答用户问题。如果用户要求进行多轮迭代总结，请结合之前的对话背景进行。\n\n${systemContent}`
-            });
-        }
-
-        // 2. 添加历史消息（从 this.messages 中获取，并过滤掉助理回复中的思考过程）
-        // handleSend 中先添加了用户消息，然后添加了 "正在思考中" 的占位符
-        // 因此我们要取占位符之前的所有消息作为上下文
+        // 2. 添加历史消息（含当前用户问题）
         const history = this.messages.slice(0, -1);
         history.forEach((msg) => {
             let content = msg.content;
             if (msg.role === "assistant") {
-                // 过滤掉历史回复中的思考部分，避免干扰上下文并节省 token
                 content = content.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
                 content = content.replace(/<think>[\s\S]*/g, "").trim();
             }
@@ -812,14 +813,14 @@ export class AI extends Model {
             }
         });
 
-        console.log("[AI] 发送给AI的完整消息条数:", messages.length);
+        console.log("[AI] 发送给后端的消息条数:", messages.length);
 
         // 使用流式 API
-        return this.callAIStream(messages);
+        return this.callAIStream(messages, activeAttachments, notebookId);
     }
 
     // 流式调用 AI API
-    private async callAIStream(messages: any[]): Promise<string> {
+    private async callAIStream(messages: any[], activeAttachments: string[] = [], notebookId: string = ""): Promise<string> {
         return new Promise((resolve, reject) => {
             let fullContent = "";
 
@@ -833,7 +834,7 @@ export class AI extends Model {
                     'Authorization': `Bearer ${token}`,
                     'X-Auth-Token': token
                 },
-                body: JSON.stringify({ messages }),
+                body: JSON.stringify({ messages, activeAttachments, notebookId }),
                 credentials: 'include'
             }).then(response => {
                 if (!response.ok) {

@@ -579,11 +579,16 @@ func (s *MeetingService) callASR(audioData []byte) (string, error) {
 			}
 			// 此句话已经确定，清空暂存区
 			latestPartialText = ""
+			break
 		} else {
 			// 将中间结果暂存 (2pass-online 的实时结果)
 			latestPartialText = result.Text
 		}
 	}
+	
+	rawText := fullTranscriptBuilder.String()
+	cleanedText := cleanASRTags(rawText)
+	return cleanedText, nil
 }
 
 // GenerateSummary 生成摘要

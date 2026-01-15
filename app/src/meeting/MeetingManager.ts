@@ -19,7 +19,7 @@ export class MeetingManager {
     private totalSamplesCollected: number = 0;
     private intervalTimer: any = null;
     private startTime: number = 0;
-    private intervalMinutes: number = 1;
+    private intervalSeconds: number = 60;
     private statusCallback: ((status: IMeetingStatus) => void) | null = null;
     private countdownSec: number = 0;
     private _isTranscribing: boolean = false;
@@ -34,9 +34,9 @@ export class MeetingManager {
         return MeetingManager.instance;
     }
 
-    public async startRecording(minutes: number = 1) {
-        this.intervalMinutes = minutes;
-        this.countdownSec = this.intervalMinutes * 60;
+    public async startRecording(seconds: number = 60) {
+        this.intervalSeconds = seconds;
+        this.countdownSec = this.intervalSeconds;
         this.pcmBuffer = [];
 
         try {
@@ -74,7 +74,7 @@ export class MeetingManager {
 
             this.startTime = Date.now();
             this.startTimer();
-            console.log("Meeting recording started (PCM 16k), interval:", minutes, "min");
+            console.log("Meeting recording started (PCM 16k), interval:", seconds, "s");
         } catch (err) {
             showMessage("无法访问麦克风: " + err);
             throw err;
@@ -121,13 +121,13 @@ export class MeetingManager {
         this.statusCallback = cb;
     }
 
-    public setInterval(minutes: number) {
-        this.intervalMinutes = minutes;
-        this.countdownSec = minutes * 60;
+    public setInterval(seconds: number) {
+        this.intervalSeconds = seconds;
+        this.countdownSec = seconds;
     }
 
     public getInterval() {
-        return this.intervalMinutes;
+        return this.intervalSeconds;
     }
 
     private startTimer() {
@@ -138,7 +138,7 @@ export class MeetingManager {
 
             if (this.countdownSec <= 0) {
                 this.uploadAndTranscribe();
-                this.countdownSec = this.intervalMinutes * 60;
+                this.countdownSec = this.intervalSeconds;
             }
 
             if (this.statusCallback) {
@@ -172,15 +172,25 @@ export class MeetingManager {
         const totalSamples = this.pcmBuffer.reduce((acc, s) => acc + s.length, 0);
         const estimatedDuration = (totalSamples / 16000).toFixed(2);
 
+        // 检查音量 (音量过小可能是麦克风问题或授权失效)
+        let maxAmp = 0;
+        for (const chunk of this.pcmBuffer) {
+            for (let i = 0; i < chunk.length; i++) {
+                const a = Math.abs(chunk[i]);
+                if (a > maxAmp) maxAmp = a;
+            }
+        }
+
         console.log("Audio encoding completed:", {
+            maxAmplitude: maxAmp.toFixed(4),
             blobSize: audioBlob.size,
-            blobType: audioBlob.type,
-            pcmBufferLength: this.pcmBuffer.length,
             totalSamples: totalSamples,
-            estimatedDuration: estimatedDuration + "秒",
-            bytesPerSample: 2,
-            expectedSize: totalSamples * 2 + 44
+            estimatedDuration: estimatedDuration + "秒"
         });
+
+        if (maxAmp < 0.01) {
+            console.warn("Detected very low audio amplitude. Mic might be muted or not working.");
+        }
 
         this.pcmBuffer = []; // 清空缓冲区用于下一次采集
 

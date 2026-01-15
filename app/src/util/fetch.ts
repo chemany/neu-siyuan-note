@@ -78,7 +78,7 @@ export const fetchPost = (url: string, data?: any, cb?: (response: IWebSocketDat
                     localStorage.removeItem('siyuan_token');
                     localStorage.removeItem('siyuan_user');
                     document.cookie = 'siyuan_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
-                    
+
                     // 重定向到应用根路径，会自动跳转到登录页
                     setTimeout(() => {
                         window.location.href = window.location.origin + '/notepads/';
@@ -127,7 +127,7 @@ export const fetchPost = (url: string, data?: any, cb?: (response: IWebSocketDat
     });
 };
 
-export const fetchSyncPost = async (url: string, data?: any) => {
+export const fetchSyncPost = async (url: string, data?: any, process: boolean = true) => {
     const init: RequestInit = {
         method: "POST",
         headers: {
@@ -154,7 +154,9 @@ export const fetchSyncPost = async (url: string, data?: any) => {
     }
     const res = await fetch(url, init);
     const res2 = await res.json() as IWebSocketData;
-    processMessage(res2);
+    if (process) {
+        processMessage(res2);
+    }
     return res2;
 };
 

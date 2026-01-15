@@ -95,7 +95,17 @@ func chat(c *gin.Context) {
 		})
 	}
 
-	content, err := model.Chat(messages)
+	// 提取 RAG 隔离过滤参数
+	activeAttachments := []string{}
+	if attachments, ok := arg["activeAttachments"].([]interface{}); ok {
+		for _, a := range attachments {
+			if s, ok := a.(string); ok {
+				activeAttachments = append(activeAttachments, s)
+			}
+		}
+	}
+
+	content, err := model.Chat(messages, activeAttachments)
 	if err != nil {
 		ret.Code = -1
 		ret.Msg = err.Error()
@@ -143,6 +153,16 @@ func chatStream(c *gin.Context) {
 		})
 	}
 
+	// 提取 RAG 隔离过滤参数
+	activeAttachments := []string{}
+	if attachments, ok := arg["activeAttachments"].([]interface{}); ok {
+		for _, a := range attachments {
+			if s, ok := a.(string); ok {
+				activeAttachments = append(activeAttachments, s)
+			}
+		}
+	}
+
 	// 设置 SSE 响应头
 	c.Header("Content-Type", "text/event-stream")
 	c.Header("Cache-Control", "no-cache")
@@ -150,7 +170,7 @@ func chatStream(c *gin.Context) {
 	c.Header("Access-Control-Allow-Origin", "*")
 
 	// 流式输出
-	err := model.ChatStream(messages, func(token string) error {
+	err := model.ChatStream(messages, activeAttachments, func(token string) error {
 		// SSE 格式: data: {json}\n\n
 		data := map[string]interface{}{
 			"token": token,

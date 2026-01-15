@@ -1,19 +1,19 @@
-import {setEditMode} from "../util/setEditMode";
-import {scrollEvent} from "../scroll/event";
-import {isMobile} from "../../util/functions";
-import {Constants} from "../../constants";
-import {isMac} from "../util/compatibility";
-import {setInlineStyle} from "../../util/assets";
-import {fetchPost} from "../../util/fetch";
-import {lineNumberRender} from "../render/highlightRender";
-import {hideMessage, showMessage} from "../../dialog/message";
-import {genUUID} from "../../util/genID";
-import {getContenteditableElement, getLastBlock} from "../wysiwyg/getBlock";
-import {genEmptyElement, genHeadingElement} from "../../block/util";
-import {transaction} from "../wysiwyg/transaction";
-import {focusByRange} from "../util/selection";
+import { setEditMode } from "../util/setEditMode";
+import { scrollEvent } from "../scroll/event";
+import { isMobile } from "../../util/functions";
+import { Constants } from "../../constants";
+import { isMac } from "../util/compatibility";
+import { setInlineStyle } from "../../util/assets";
+import { fetchPost } from "../../util/fetch";
+import { lineNumberRender } from "../render/highlightRender";
+import { hideMessage, showMessage } from "../../dialog/message";
+import { genUUID } from "../../util/genID";
+import { getContenteditableElement, getLastBlock } from "../wysiwyg/getBlock";
+import { genEmptyElement, genHeadingElement } from "../../block/util";
+import { transaction } from "../wysiwyg/transaction";
+import { focusByRange } from "../util/selection";
 /// #if !MOBILE
-import {moveResize} from "../../dialog/moveResize";
+import { moveResize } from "../../dialog/moveResize";
 /// #endif
 import {
     hasClosestBlock,
@@ -119,7 +119,7 @@ export const initUI = (protyle: IProtyle) => {
                 });
             });
         }, Constants.TIMEOUT_LOAD);
-    }, {passive: true});
+    }, { passive: true });
     protyle.contentElement.addEventListener("click", (event: MouseEvent & { target: HTMLElement }) => {
         // wysiwyg 元素下方点击无效果 https://github.com/siyuan-note/siyuan/issues/12009
         if (protyle.disabled ||
@@ -341,18 +341,18 @@ export const getPadding = (protyle: IProtyle) => {
         if (!isFullWidth) {
             isFullWidth = window.siyuan.config.editor.fullWidth ? "true" : "false";
         }
-        let padding = (protyle.element.clientWidth - Constants.SIZE_EDITOR_WIDTH) / 2;
-        if (isFullWidth === "false" && padding > 96) {
+        let padding = (protyle.element.clientWidth - Constants.SIZE_EDITOR_WIDTH) / 4;
+        if (isFullWidth === "false" && padding > 48) {
             if (padding > Constants.SIZE_EDITOR_WIDTH) {
                 // 超宽屏调整 https://ld246.com/article/1668266637363
-                padding = protyle.element.clientWidth * .382 / 1.382;
+                padding = protyle.element.clientWidth * .382 / 1.382 / 2;
             }
             padding = Math.ceil(padding);
             left = padding;
             right = padding;
         } else if (protyle.element.clientWidth > Constants.SIZE_EDITOR_WIDTH) {
-            left = 96;
-            right = 96;
+            left = 48;
+            right = 48;
         }
     }
     return {

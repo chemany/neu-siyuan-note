@@ -104,25 +104,20 @@ func chatGPTContinueWrite(msg string, contextMsgs []string, cloud bool) (ret str
 	// RAG 增强：搜索相关文档
 	embeddingService := NewEmbeddingService()
 	if embeddingService != nil && embeddingService.IsEnabled() {
-		// 搜索最相关的3个文档
-		assets, err := SemanticSearchAssets(util.DataDir, msg, 3)
-		if err == nil && len(assets) > 0 {
+		// 搜索最相关的10个分块
+		chunks, err := SemanticSearchAssetChunks(util.DataDir, msg, 10, nil)
+		if err == nil && len(chunks) > 0 {
 			var contextBuilder strings.Builder
 			contextBuilder.WriteString("以下是相关的文档内容供参考：\n\n")
-			for i, asset := range assets {
-				// 截取内容以避免 Prompt 过长
-				content := asset.Content
-				if len(content) > 2000 {
-					content = content[:2000] + "..."
-				}
-				contextBuilder.WriteString(fmt.Sprintf("【文档%d: %s】\n%s\n\n", i+1, asset.FileName, content))
+			for i, chunk := range chunks {
+				contextBuilder.WriteString(fmt.Sprintf("【片段%d】\n%s\n\n", i+1, chunk.Content))
 			}
 			contextBuilder.WriteString("请基于以上文档内容回答用户的问题：\n")
 			contextBuilder.WriteString(msg)
 
 			// 更新 msg
 			msg = contextBuilder.String()
-			logging.LogInfof("RAG 增强已启用，加载了 %d 个相关文档", len(assets))
+			logging.LogInfof("RAG 增强已启用，加载了 %d 个相关分块", len(chunks))
 		}
 	}
 
@@ -212,13 +207,13 @@ func getEffectiveAIConfig() (apiKey, apiBaseURL, apiModel string, maxTokens int,
 	return
 }
 
-func Chat(messages []openai.ChatCompletionMessage) (ret string, err error) {
+func Chat(messages []openai.ChatCompletionMessage, allowedAssets []string) (ret string, err error) {
 	if !isOpenAIAPIEnabled() {
 		return "", fmt.Errorf("AI not enabled")
 	}
 
 	// RAG 增强：从用户消息中提取查询，搜索相关文档
-	messages = enhanceMessagesWithRAG(messages)
+	messages = EnhanceMessagesWithRAG(messages, allowedAssets)
 
 	apiKey, apiBaseURL, apiModel, maxTokens, temperature := getEffectiveAIConfig()
 
@@ -243,13 +238,13 @@ func Chat(messages []openai.ChatCompletionMessage) (ret string, err error) {
 }
 
 // ChatStream 流式聊天，通过 channel 返回每个 token
-func ChatStream(messages []openai.ChatCompletionMessage, onToken func(token string) error) error {
+func ChatStream(messages []openai.ChatCompletionMessage, allowedAssets []string, onToken func(token string) error) error {
 	if !isOpenAIAPIEnabled() {
 		return fmt.Errorf("AI not enabled")
 	}
 
 	// RAG 增强
-	messages = enhanceMessagesWithRAG(messages)
+	messages = EnhanceMessagesWithRAG(messages, allowedAssets)
 
 	apiKey, apiBaseURL, apiModel, maxTokens, temperature := getEffectiveAIConfig()
 
@@ -291,8 +286,8 @@ func ChatStream(messages []openai.ChatCompletionMessage, onToken func(token stri
 	return nil
 }
 
-// enhanceMessagesWithRAG 使用 RAG 增强消息
-func enhanceMessagesWithRAG(messages []openai.ChatCompletionMessage) []openai.ChatCompletionMessage {
+// EnhanceMessagesWithRAG 使用 RAG 增强消息
+func EnhanceMessagesWithRAG(messages []openai.ChatCompletionMessage, allowedAssets []string) []openai.ChatCompletionMessage {
 	embeddingService := NewEmbeddingService()
 	if embeddingService == nil || !embeddingService.IsEnabled() {
 		return messages
@@ -318,30 +313,84 @@ func enhanceMessagesWithRAG(messages []openai.ChatCompletionMessage) []openai.Ch
 		}
 	}
 
-	// 搜索相关文档
-	assets, err := SemanticSearchAssets(util.DataDir, userQuery, 3)
-	if err != nil || len(assets) == 0 {
-		logging.LogInfof("RAG: 未找到相关文档或搜索失败: %v", err)
+	// 检测是否为总结类请求
+	isSummaryRequest := false
+	summaryKeywords := []string{"总结", "摘要", "概览", "概括", "所有文档", "文档集", "整体", "总结一下"}
+	for _, kw := range summaryKeywords {
+		if strings.Contains(userQuery, kw) {
+			isSummaryRequest = true
+			break
+		}
+	}
+
+	var ragContext strings.Builder
+	if isSummaryRequest {
+		logging.LogInfof("RAG: 检测到总结请求，执行全量注入模式")
+		// 全量模式：从所有向量化资产中提取所有内容
+		assets, err := GetVectorizedAssets(util.DataDir)
+		if err == nil && len(assets) > 0 {
+			ragContext.WriteString("以下是所有相关附件的完整内容总结参考（请以此为准，严禁强行关联不同来源的技术）：\n\n")
+			totalLen := 0
+			const maxTotalLen = 8000 // 限制总长度，确保在 20k Token 窗口内留出 50%+ 的余量
+			for _, asset := range assets {
+				if totalLen > maxTotalLen { break }
+				// 跨笔记本隔离：如果指定了允许的附件列表，则只包含列表中的文件
+				if len(allowedAssets) > 0 {
+					found := false
+					for _, allowed := range allowedAssets {
+						if asset.FileName == allowed || strings.Contains(asset.AssetPath, allowed) {
+							found = true
+							break
+						}
+					}
+					if !found { continue }
+				}
+				ragContext.WriteString(fmt.Sprintf("--- 文档来源: %s ---\n", asset.FileName))
+				for _, chunk := range asset.Chunks {
+					if totalLen+len(chunk.Content) > maxTotalLen {
+						ragContext.WriteString("...(由于长度限制，后续内容已截断)\n")
+						totalLen = maxTotalLen + 1
+						break
+					}
+					ragContext.WriteString(chunk.Content)
+					ragContext.WriteString("\n")
+					totalLen += len(chunk.Content)
+				}
+				ragContext.WriteString("\n")
+			}
+		}
+	} else {
+		// 问答模式：执行分块检索 (Top-10)
+		chunks, err := SemanticSearchAssetChunks(util.DataDir, userQuery, 10, allowedAssets)
+		if err == nil && len(chunks) > 0 {
+			logging.LogInfof("RAG: 问答模式，找到 %d 个相关分块", len(chunks))
+			ragContext.WriteString("以下是与用户问题高度相关的文档片段，请据此回答。注意区分不同来源，不要强行拼凑逻辑：\n\n")
+			totalLen := 0
+			const maxQALen = 6000 // 问答模式严格限制，核心逻辑优先
+			for i, chunk := range chunks {
+				if totalLen+len(chunk.Content) > maxQALen {
+					ragContext.WriteString("...(由于长度限制，后续片段已忽略)\n")
+					break
+				}
+				ragContext.WriteString(fmt.Sprintf("【片段%d - 来源: %s】\n%s\n\n", i+1, chunk.Source, chunk.Content))
+				totalLen += len(chunk.Content)
+			}
+		}
+	}
+
+	if ragContext.Len() == 0 {
 		return messages
 	}
-
-	// 构建 RAG 上下文
-	var ragContext strings.Builder
-	ragContext.WriteString("以下是与用户问题相关的文档内容，请参考这些内容回答：\n\n")
-	for i, asset := range assets {
-		content := asset.Content
-		if len(content) > 1500 {
-			content = content[:1500] + "..."
-		}
-		ragContext.WriteString(fmt.Sprintf("【相关文档%d: %s】\n%s\n\n", i+1, asset.FileName, content))
-	}
-
-	logging.LogInfof("RAG 增强已启用，找到 %d 个相关文档", len(assets))
 
 	// 将 RAG 上下文添加到 system 消息中
 	ragSystemMsg := openai.ChatCompletionMessage{
 		Role:    "system",
-		Content: ragContext.String(),
+		Content: "你是一个严谨的文档分析专家。请分别参考以下不同来源的文档内容回答。\n" +
+				"**绝对规则：**\n" +
+				"1. 严禁在没有明确文档支持的情况下，强行关联或合并不同文档或不同领域的技术逻辑。\n" +
+				"2. 如果不同文档讨论的是不相关的领域（如某种化学工艺 vs 另一种无关中间体），请分段分别陈述，严禁进行逻辑拼凑。\n" +
+				"3. 必须在回答中明确提到信息来源（如“根据《XXX文档》...”）。\n\n" +
+				ragContext.String(),
 	}
 
 	// 在消息列表开头插入 RAG 上下文
@@ -879,14 +928,23 @@ func VectorizeBlock(blockID string) error {
 	return saveBlockVector(blockVector)
 }
 
+// VectorChunk 单个内容块及其向量
+type VectorChunk struct {
+	ID      string    `json:"id"`
+	Source  string    `json:"source"`  // 片段来源文件名
+	Content string    `json:"content"`
+	Vector  []float64 `json:"vector"`
+}
+
 // AssetVector 资源文件向量数据
 type AssetVector struct {
 	ID        string                 `json:"id"`        // 资源文件ID（基于路径生成）
 	AssetPath string                 `json:"assetPath"` // 资源文件路径
 	FileName  string                 `json:"fileName"`  // 文件名
 	FileType  string                 `json:"fileType"`  // 文件类型
-	Content   string                 `json:"content"`   // 解析后的文本内容（用于展示，可截断）
-	Vector    []float64              `json:"vector"`    // 向量数据
+	Content   string                 `json:"content"`   // 解析后的全文预览（或第一块内容）
+	Vector    []float64              `json:"vector"`    // 整体向量（或第一块向量），用于快速初步搜索
+	Chunks    []*VectorChunk         `json:"chunks"`    // 分块向量数据
 	UpdatedAt time.Time              `json:"updatedAt"` // 更新时间
 	Metadata  map[string]interface{} `json:"metadata"`  // 额外元数据
 }
@@ -909,20 +967,52 @@ func VectorizeAsset(assetPath string) (*AssetVector, error) {
 		return nil, fmt.Errorf("资源文件内容无效或解析失败，跳过向量化")
 	}
 
-	// 限制内容长度用于向量化
-	// 支持 8000 tokens 的模型，中文约 1 字符 = 1-2 tokens
-	// 为安全起见，限制到 7000 字符
-	vectorizeContent := content
-	maxChars := 7000
-	if len(vectorizeContent) > maxChars {
-		// 尝试在句子边界截断
-		vectorizeContent = truncateAtSentence(vectorizeContent, maxChars)
+	// 分块逻辑：每 2000 字符一块，重叠 200 字符
+	const chunkSize = 2000
+	const overlap = 200
+	var chunks []*VectorChunk
+	runes := []rune(content)
+	
+	logging.LogInfof("开始分块向量化资源文件: %s, 总长度: %d", filepath.Base(assetPath), len(runes))
+
+	for i := 0; i < len(runes); i += (chunkSize - overlap) {
+		end := i + chunkSize
+		if end > len(runes) {
+			end = len(runes)
+		}
+		
+		chunkText := string(runes[i:end])
+		if len(strings.TrimSpace(chunkText)) < 10 {
+			if end == len(runes) { break }
+			continue
+		}
+
+		// 向量化文本
+		vector, err := embeddingService.VectorizeText(chunkText)
+		if err != nil {
+			logging.LogErrorf("分块向量化失败 (块 %d): %v", len(chunks), err)
+			continue
+		}
+
+		chunks = append(chunks, &VectorChunk{
+			ID:      fmt.Sprintf("%s_c%d", assetPath, len(chunks)),
+			Source:  filepath.Base(assetPath),
+			Content: chunkText,
+			Vector:  vector,
+		})
+
+		// 简单的 API 保护
+		if len(chunks)%10 == 0 {
+			time.Sleep(500 * time.Millisecond)
+		}
+		
+		if end == len(runes) {
+			break
+		}
 	}
 
-	// 向量化文本
-	vector, err := embeddingService.VectorizeText(vectorizeContent)
-	if err != nil {
-		return nil, fmt.Errorf("向量化失败: %v", err)
+	if len(chunks) == 0 {
+		return nil, fmt.Errorf("分块向量化失败，没有生成任何有效分块")
 	}
 
 	// 生成资源ID（基于路径的哈希）
@@ -934,24 +1024,20 @@ func VectorizeAsset(assetPath string) (*AssetVector, error) {
 	fileName := filepath.Base(assetPath)
 	fileType := strings.ToLower(strings.TrimPrefix(filepath.Ext(assetPath), "."))
 
-	// 准备展示内容（截断到500字符）
-	displayContent := content
-	if len(displayContent) > 500 {
-		displayContent = displayContent[:500] + "..."
-	}
-
 	// 创建资源向量对象
 	assetVector := &AssetVector{
 		ID:        assetID,
 		AssetPath: assetPath,
 		FileName:  fileName,
 		FileType:  fileType,
-		Content:   displayContent,
-		Vector:    vector,
+		Content:   chunks[0].Content, // 第一块内容作为预览
+		Vector:    chunks[0].Vector,  // 第一块向量作为主向量
+		Chunks:    chunks,
 		UpdatedAt: time.Now(),
 		Metadata: map[string]interface{}{
 			"contentLength": len(content),
-			"vectorDim":     len(vector),
+			"chunkCount":    len(chunks),
+			"vectorDim":     len(chunks[0].Vector),
 		},
 	}
 
@@ -960,7 +1046,7 @@ func VectorizeAsset(assetPath string) (*AssetVector, error) {
 		return nil, fmt.Errorf("保存向量数据失败: %v", err)
 	}
 
-	logging.LogInfof("资源文件 %s 向量化成功，向量文件: %s", fileName, getVectorFilePath(assetPath))
+	logging.LogInfof("资源文件 %s 分块向量化成功，共 %d 块，向量文件: %s", fileName, len(chunks), getVectorFilePath(assetPath))
 	return assetVector, nil
 }
 
@@ -1072,6 +1158,20 @@ func loadAllAssetVectors(dataDir string) ([]*AssetVector, error) {
 				return nil
 			}
 
+			// 兼容性逻辑：如果是旧版索引（没有 Chunks）
+			if len(vector.Chunks) == 0 && vector.Content != "" {
+				logging.LogInfof("检测到旧版向量索引 [%s]，正在进行兼容处理并排期升级", vector.FileName)
+				// 1. 临时封装为一个 Chunk，确保当前功能不落空
+				vector.Chunks = append(vector.Chunks, &VectorChunk{
+					ID:      vector.ID + "_legacy",
+					Source:  vector.FileName,
+					Content: vector.Content,
+					Vector:  vector.Vector,
+				})
+				// 2. 将其加入异步队列，静默生成全量分块索引
+				EnqueueAssetVectorize(vector.AssetPath)
+			}
+
 			vectors = append(vectors, &vector)
 		}
 
@@ -1100,8 +1200,13 @@ func GetVectorizedAssets(dataDir string) ([]*AssetVector, error) {
 	return vectors, nil
 }
 
-// SemanticSearchAssets 资源文件语义搜索
-func SemanticSearchAssets(dataDir, query string, limit int) ([]*AssetVector, error) {
+type assetSearchResult struct {
+	chunk      *VectorChunk
+	similarity float64
+}
+
+// SemanticSearchAssetChunks 资源文件分块语义搜索
+func SemanticSearchAssetChunks(dataDir, query string, limit int, allowedAssets []string) ([]*VectorChunk, error) {
 	embeddingService := NewEmbeddingService()
 	if embeddingService == nil || !embeddingService.IsEnabled() {
 		return nil, fmt.Errorf("向量化服务未启用或未配置")
@@ -1114,22 +1219,30 @@ func SemanticSearchAssets(dataDir, query string, limit int) ([]*AssetVector, err
 	}
 
 	// 加载工作空间下所有资源向量
-	vectors, err := loadAllAssetVectors(dataDir)
+	assets, err := loadAllAssetVectors(dataDir)
 	if err != nil {
 		return nil, fmt.Errorf("加载资源向量数据失败: %v", err)
 	}
 
-	// 计算相似度并排序
-	type result struct {
-		vector     *AssetVector
-		similarity float64
-	}
+	var results []assetSearchResult
+	for _, asset := range assets {
+		// 跨笔记本隔离
+		if len(allowedAssets) > 0 {
+			found := false
+			for _, allowed := range allowedAssets {
+				if asset.FileName == allowed || strings.Contains(asset.AssetPath, allowed) {
+					found = true
+					break
+				}
+			}
+			if !found { continue }
+		}
 
-	var results []result
-	for _, vector := range vectors {
-		sim := cosineSimilarity(queryVector, vector.Vector)
-		if sim > 0.7 { // 提高相似度阈值，减少噪音
-			results = append(results, result{vector, sim})
+		for _, chunk := range asset.Chunks {
+			sim := cosineSimilarity(queryVector, chunk.Vector)
+			if sim > 0.4 {
+				results = append(results, assetSearchResult{chunk, sim})
+			}
 		}
 	}
 
@@ -1141,9 +1254,9 @@ func SemanticSearchAssets(dataDir, query string, limit int) ([]*AssetVector, err
 		results = results[:limit]
 	}
 
-	var finalResults []*AssetVector
+	var finalResults []*VectorChunk
 	for _, r := range results {
-		finalResults = append(finalResults, r.vector)
+		finalResults = append(finalResults, r.chunk)
 	}
 
 	return finalResults, nil
