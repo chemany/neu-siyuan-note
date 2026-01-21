@@ -495,27 +495,6 @@ export AI_MODEL_KEY=your-api-key
 
 ---
 
-## 📚 文档
-
-### 技术文档
-
-- [多用户架构重构总结](REFACTOR_FINAL_SUMMARY.md)
-- [数据库层重构详解](DATABASE_LAYER_REFACTOR_PROGRESS.md)
-- [缓存层测试指南](CACHE_LAYER_TEST_GUIDE.md)
-- [手动测试指南](MANUAL_TEST_GUIDE.md)
-
-### 阶段文档
-
-- [阶段3: 数据库层重构](PHASE3_COMPLETION_SUMMARY.md)
-- [阶段4: 缓存层重构](PHASE4_COMPLETION_SUMMARY.md)
-- [阶段5: 移除全局切换](PHASE5_COMPLETION_SUMMARY.md)
-
-### API 文档
-
-详见 [API 文档](docs/API.md)（待完善）
-
----
-
 ## 🤝 贡献指南
 
 欢迎贡献代码、报告问题或提出建议！
