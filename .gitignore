@@ -145,7 +145,7 @@ conf/app/
 resources/*.asar
 
 # ========================================
-# 灵枢笔记 - 排除原版文档
+# 灵枢笔记 - 排除原版文档和开发文档
 # ========================================
 # 保留 README.md (灵枢笔记说明)
 # 排除思源笔记原版文档
@@ -154,6 +154,12 @@ README_ja_JP.md
 CHANGELOG.md
 API.md
 API_zh_CN.md
+
+# 排除 .kiro 目录（开发规范和任务）
+.kiro/
+
+# 排除 PM2 配置
+ecosystem.config.js
 
 # 排除开发过程中的临时文档
 思源笔记多用户Web应用改造技术总结.md
@@ -191,6 +197,9 @@ WEB_MULTIUSER_GUIDE.md
 *_COMPLETE.md
 *_IMPLEMENTATION.md
 *_INTEGRATION.md
+*_PROGRESS.md
+*_REFACTOR_*.md
+REFACTOR_*.md
 504_TIMEOUT_FIX.md
 AI_DOCUMENT_ANALYSIS_FIX.md
 ASSET_CLEANUP_FIX.md
@@ -209,6 +218,11 @@ SYNC_FIX_SUMMARY.md
 SYNC_TEST_GUIDE.md
 WEBDAV_CONFIG_FIX.md
 WEBDAV_SYNC_FIX.md
+PHASE*_COMPLETION_SUMMARY.md
+MULTI_USER_REFACTOR_PROGRESS.md
+DATABASE_LAYER_REFACTOR_PROGRESS.md
+CACHE_LAYER_TEST_GUIDE.md
+MANUAL_TEST_GUIDE.md
 
 # 排除中文文档
 *.md
