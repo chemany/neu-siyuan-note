@@ -162,22 +162,28 @@ func createNotebook(c *gin.Context) {
 		return
 	}
 
+	// 获取 WorkspaceContext
+	ctx := model.GetWorkspaceContext(c)
+
 	name := arg["name"].(string)
-	id, err := model.CreateBox(name)
+	// 使用带 Context 的版本
+	id, err := model.CreateBoxWithContext(ctx, name)
 	if err != nil {
 		ret.Code = -1
 		ret.Msg = err.Error()
 		return
 	}
 
-	existed, err := model.Mount(id)
+	// 使用带 Context 的版本
+	existed, err := model.MountWithContext(ctx, id)
 	if err != nil {
 		ret.Code = -1
 		ret.Msg = err.Error()
 		return
 	}
 
-	box := model.Conf.Box(id)
+	// 使用带 Context 的版本
+	box := model.Conf.BoxWithContext(ctx, id)
 	if nil == box {
 		ret.Code = -1
 		ret.Msg = "opened notebook [" + id + "] not found"
