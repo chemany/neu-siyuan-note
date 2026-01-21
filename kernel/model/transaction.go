@@ -123,6 +123,16 @@ func PerformTransactions(transactions *[]*Transaction) {
 	return
 }
 
+// PerformTransactionsWithContext 执行事务（带 WorkspaceContext）
+func PerformTransactionsWithContext(ctx *WorkspaceContext, transactions *[]*Transaction) {
+	for _, tx := range *transactions {
+		tx.m = &sync.Mutex{}
+		tx.ctx = ctx // 设置 workspace 上下文
+		txQueue <- tx
+	}
+	return
+}
+
 const (
 	TxErrCodeBlockNotFound   = 0
 	TxErrCodeDataIsSyncing   = 1
@@ -1959,6 +1969,8 @@ type Transaction struct {
 	luteEngine *lute.Lute
 	m          *sync.Mutex
 	state      atomic.Int32 // 0: 初始化，1：未提交，:2: 已提交，3: 已回滚
+	
+	ctx        *WorkspaceContext // workspace 上下文，用于多用户隔离
 }
 
 func (tx *Transaction) WaitForCommit() {
@@ -2016,7 +2028,12 @@ func (tx *Transaction) loadTreeByBlockTree(bt *treenode.BlockTree) (ret *parse.T
 		return
 	}
 
-	ret, err = filesys.LoadTree(bt.BoxID, bt.Path, tx.luteEngine)
+	// 如果有 WorkspaceContext，使用带 DataDir 的版本
+	if nil != tx.ctx {
+		ret, err = filesys.LoadTreeWithDataDir(tx.ctx.DataDir, bt.BoxID, bt.Path, tx.luteEngine)
+	} else {
+		ret, err = filesys.LoadTree(bt.BoxID, bt.Path, tx.luteEngine)
+	}
 	if err != nil {
 		return
 	}
@@ -2039,7 +2056,12 @@ func (tx *Transaction) loadTree(id string) (ret *parse.Tree, err error) {
 		return
 	}
 
-	ret, err = filesys.LoadTree(box, p, tx.luteEngine)
+	// 如果有 WorkspaceContext，使用带 DataDir 的版本
+	if nil != tx.ctx {
+		ret, err = filesys.LoadTreeWithDataDir(tx.ctx.DataDir, box, p, tx.luteEngine)
+	} else {
+		ret, err = filesys.LoadTree(box, p, tx.luteEngine)
+	}
 	if err != nil {
 		return
 	}

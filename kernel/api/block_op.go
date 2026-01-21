@@ -624,7 +624,9 @@ func insertBlock(c *gin.Context) {
 		},
 	}
 
-	model.PerformTransactions(&transactions)
+	// 获取 WorkspaceContext 并使用带 Context 的版本
+	ctx := model.GetWorkspaceContext(c)
+	model.PerformTransactionsWithContext(ctx, &transactions)
 	model.FlushTxQueue()
 
 	ret.Data = transactions
