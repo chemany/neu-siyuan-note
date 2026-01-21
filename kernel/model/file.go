@@ -1044,6 +1044,11 @@ func CreateDocByMd(boxID, p, title, md string, sorts []string) (tree *parse.Tree
 }
 
 func CreateWithMarkdown(tags, boxID, hPath, md, parentID, id string, withMath bool, clippingHref string) (retID string, err error) {
+	return CreateWithMarkdownWithContext(GetDefaultWorkspaceContext(), tags, boxID, hPath, md, parentID, id, withMath, clippingHref)
+}
+
+// CreateWithMarkdownWithContext 使用 WorkspaceContext 创建文档
+func CreateWithMarkdownWithContext(ctx *WorkspaceContext, tags, boxID, hPath, md, parentID, id string, withMath bool, clippingHref string) (retID string, err error) {
 	createDocLock.Lock()
 	defer createDocLock.Unlock()
 
@@ -1064,7 +1069,7 @@ func CreateWithMarkdown(tags, boxID, hPath, md, parentID, id string, withMath bo
 		enableLuteInlineSyntax(luteEngine)
 	}
 	dom := luteEngine.Md2BlockDOM(md, false)
-	retID, err = createDocsByHPath(box.ID, hPath, dom, parentID, id)
+	retID, err = createDocsByHPathWithContext(ctx, box.ID, hPath, dom, parentID, id)
 
 	nameValues := map[string]string{}
 	tags = strings.TrimSpace(tags)
@@ -1689,6 +1694,11 @@ func RenameDoc(boxID, p, title string) (err error) {
 }
 
 func createDoc(boxID, p, title, dom string) (tree *parse.Tree, err error) {
+	return createDocWithContext(GetDefaultWorkspaceContext(), boxID, p, title, dom)
+}
+
+// createDocWithContext 使用 WorkspaceContext 创建文档
+func createDocWithContext(ctx *WorkspaceContext, boxID, p, title, dom string) (tree *parse.Tree, err error) {
 	title = removeInvisibleCharsInTitle(title)
 	if 512 < utf8.RuneCountInString(title) {
 		// 限制笔记本名和文档名最大长度为 `512` https://github.com/siyuan-note/siyuan/issues/6299
@@ -1723,7 +1733,7 @@ func createDoc(boxID, p, title, dom string) (tree *parse.Tree, err error) {
 	folder := path.Dir(p)
 	if "/" != folder {
 		parentID := path.Base(folder)
-		parentTree, loadErr := LoadTreeByBlockID(parentID)
+		parentTree, loadErr := LoadTreeByBlockIDWithContext(ctx, parentID)
 		if nil != loadErr {
 			logging.LogErrorf("get parent tree [%s] failed", parentID)
 			err = ErrBlockNotFound

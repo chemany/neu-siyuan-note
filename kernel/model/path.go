@@ -34,6 +34,11 @@ import (
 )
 
 func createDocsByHPath(boxID, hPath, content, parentID, id string) (retID string, err error) {
+	return createDocsByHPathWithContext(GetDefaultWorkspaceContext(), boxID, hPath, content, parentID, id)
+}
+
+// createDocsByHPathWithContext 使用 WorkspaceContext 创建文档
+func createDocsByHPathWithContext(ctx *WorkspaceContext, boxID, hPath, content, parentID, id string) (retID string, err error) {
 	if "" == id {
 		id = ast.NewNodeID()
 	}
@@ -50,7 +55,7 @@ func createDocsByHPath(boxID, hPath, content, parentID, id string) (retID string
 		if nil != preferredParent && preferredParent.RootID == parentID {
 			// 如果父文档存在且 ID 一致，则直接在父文档下创建
 			p := strings.TrimSuffix(preferredParent.Path, ".sy") + "/" + id + ".sy"
-			if _, err = createDoc(boxID, p, name, content); err != nil {
+			if _, err = createDocWithContext(ctx, boxID, p, name, content); err != nil {
 				logging.LogErrorf("create doc [%s] failed: %s", p, err)
 			}
 			return
@@ -102,17 +107,17 @@ func createDocsByHPath(boxID, hPath, content, parentID, id string) (retID string
 			pathBuilder.WriteString(rootID)
 			docP := pathBuilder.String() + ".sy"
 			if isNotLast {
-				if _, err = createDoc(boxID, docP, part, ""); err != nil {
+				if _, err = createDocWithContext(ctx, boxID, docP, part, ""); err != nil {
 					return
 				}
 			} else {
-				if _, err = createDoc(boxID, docP, part, content); err != nil {
+				if _, err = createDocWithContext(ctx, boxID, docP, part, content); err != nil {
 					return
 				}
 			}
 
 			if isNotLast {
-				dirPath := filepath.Join(util.DataDir, boxID, pathBuilder.String())
+				dirPath := filepath.Join(ctx.GetDataDir(), boxID, pathBuilder.String())
 				if err = os.MkdirAll(dirPath, 0755); err != nil {
 					logging.LogErrorf("mkdir [%s] failed: %s", dirPath, err)
 					return

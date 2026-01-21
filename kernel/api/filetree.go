@@ -880,7 +880,10 @@ func createDocWithMd(c *gin.Context) {
 		clippingHref = clippingHrefArg.(string)
 	}
 
-	id, err := model.CreateWithMarkdown(tags, notebook, hPath, markdown, parentID, id, withMath, clippingHref)
+	// 从 Gin Context 获取 WorkspaceContext
+	ctx := model.GetWorkspaceContext(c)
+
+	id, err := model.CreateWithMarkdownWithContext(ctx, tags, notebook, hPath, markdown, parentID, id, withMath, clippingHref)
 	if err != nil {
 		ret.Code = -1
 		ret.Msg = err.Error()
