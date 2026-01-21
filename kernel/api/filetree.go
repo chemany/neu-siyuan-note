@@ -592,7 +592,10 @@ func removeDoc(c *gin.Context) {
 	}
 
 	p := arg["path"].(string)
-	model.RemoveDoc(notebook, p)
+	
+	// 从 Gin Context 获取 WorkspaceContext
+	ctx := model.GetWorkspaceContext(c)
+	model.RemoveDocWithContext(ctx, notebook, p)
 }
 
 func removeDocByID(c *gin.Context) {
@@ -654,7 +657,10 @@ func renameDoc(c *gin.Context) {
 	p := arg["path"].(string)
 	title := arg["title"].(string)
 
-	err := model.RenameDoc(notebook, p, title)
+	// 从 Gin Context 获取 WorkspaceContext
+	ctx := model.GetWorkspaceContext(c)
+
+	err := model.RenameDocWithContext(ctx, notebook, p, title)
 	if err != nil {
 		ret.Code = -1
 		ret.Msg = err.Error()

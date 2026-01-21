@@ -1520,6 +1520,11 @@ func moveDoc(fromBox *Box, fromPath string, toBox *Box, toPath string, luteEngin
 }
 
 func RemoveDoc(boxID, p string) {
+	RemoveDocWithContext(GetDefaultWorkspaceContext(), boxID, p)
+}
+
+// RemoveDocWithContext 使用 WorkspaceContext 删除文档
+func RemoveDocWithContext(ctx *WorkspaceContext, boxID, p string) {
 	box := Conf.Box(boxID)
 	if nil == box {
 		return
@@ -1527,7 +1532,7 @@ func RemoveDoc(boxID, p string) {
 
 	FlushTxQueue()
 	luteEngine := util.NewLute()
-	removeDoc(box, p, luteEngine)
+	removeDocWithContext(ctx, box, p, luteEngine)
 	IncSync()
 	return
 }
@@ -1547,7 +1552,13 @@ func RemoveDocs(paths []string) {
 }
 
 func removeDoc(box *Box, p string, luteEngine *lute.Lute) {
-	tree, _ := filesys.LoadTree(box.ID, p, luteEngine)
+	removeDocWithContext(GetDefaultWorkspaceContext(), box, p, luteEngine)
+}
+
+// removeDocWithContext 使用 WorkspaceContext 删除文档（内部实现）
+func removeDocWithContext(ctx *WorkspaceContext, box *Box, p string, luteEngine *lute.Lute) {
+	dataDir := ctx.GetDataDir()
+	tree, _ := filesys.LoadTreeWithDataDir(dataDir, box.ID, p, luteEngine)
 	if nil == tree {
 		return
 	}
@@ -1559,7 +1570,7 @@ func removeDoc(box *Box, p string, luteEngine *lute.Lute) {
 	}
 
 	historyPath := filepath.Join(historyDir, box.ID, p)
-	absPath := filepath.Join(util.DataDir, box.ID, p)
+	absPath := filepath.Join(dataDir, box.ID, p)
 	if err = filelock.Copy(absPath, historyPath); err != nil {
 		logging.LogErrorf("backup [path=%s] to history [%s] failed: %s", absPath, historyPath, err)
 		return
@@ -1573,7 +1584,7 @@ func removeDoc(box *Box, p string, luteEngine *lute.Lute) {
 	childrenDir := path.Join(dir, tree.ID)
 	existChildren := box.Exist(childrenDir)
 	if existChildren {
-		absChildrenDir := filepath.Join(util.DataDir, tree.Box, childrenDir)
+		absChildrenDir := filepath.Join(dataDir, tree.Box, childrenDir)
 		historyPath = filepath.Join(historyDir, tree.Box, childrenDir)
 		if err = filelock.Copy(absChildrenDir, historyPath); err != nil {
 			logging.LogErrorf("backup [path=%s] to history [%s] failed: %s", absChildrenDir, historyPath, err)
@@ -1586,7 +1597,7 @@ func removeDoc(box *Box, p string, luteEngine *lute.Lute) {
 	allRemoveRootIDs = append(allRemoveRootIDs, removeIDs...)
 	allRemoveRootIDs = gulu.Str.RemoveDuplicatedElem(allRemoveRootIDs)
 	for _, rootID := range allRemoveRootIDs {
-		removeTree, _ := LoadTreeByBlockID(rootID)
+		removeTree, _ := LoadTreeByBlockIDWithContext(ctx, rootID)
 		if nil == removeTree {
 			continue
 		}
@@ -1610,7 +1621,7 @@ func removeDoc(box *Box, p string, luteEngine *lute.Lute) {
 	box.removeSort(removeIDs)
 	RemoveRecentDoc(removeIDs)
 	if "/" != dir {
-		others, err := os.ReadDir(filepath.Join(util.DataDir, box.ID, dir))
+		others, err := os.ReadDir(filepath.Join(dataDir, box.ID, dir))
 		if err == nil && 1 > len(others) {
 			box.Remove(dir)
 		}
@@ -1641,6 +1652,11 @@ func removeDoc0(tree *parse.Tree, childrenDir string) {
 }
 
 func RenameDoc(boxID, p, title string) (err error) {
+	return RenameDocWithContext(GetDefaultWorkspaceContext(), boxID, p, title)
+}
+
+// RenameDocWithContext 使用 WorkspaceContext 重命名文档
+func RenameDocWithContext(ctx *WorkspaceContext, boxID, p, title string) (err error) {
 	box := Conf.Box(boxID)
 	if nil == box {
 		err = errors.New(Conf.Language(0))
@@ -1649,7 +1665,7 @@ func RenameDoc(boxID, p, title string) (err error) {
 
 	FlushTxQueue()
 	luteEngine := util.NewLute()
-	tree, err := filesys.LoadTree(box.ID, p, luteEngine)
+	tree, err := filesys.LoadTreeWithDataDir(ctx.GetDataDir(), box.ID, p, luteEngine)
 	if err != nil {
 		return
 	}
