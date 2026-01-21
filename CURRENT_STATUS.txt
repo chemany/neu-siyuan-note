@@ -14,7 +14,17 @@
 
 最新进展
 --------
-2026-01-22:
+2026-01-22 (下午):
+- ✅ 开始阶段 6 基础功能测试
+  * 创建测试脚本: test-basic-functions-simple.sh
+  * 测试结果: 3/4 通过 (75%)
+  * 成功: 统一认证登录、灵枢笔记登录、笔记本列表
+  * 失败: 创建笔记本 (opened notebook not found)
+  * 待修复: 文档列表查询、文档创建等 API
+- ✅ 更新任务状态 (6.1.1 部分完成)
+- ✅ 创建测试报告: PHASE6_BASIC_FUNCTION_TEST_RESULTS.md
+
+2026-01-22 (上午):
 - ✅ 修复统一认证服务登录 Bug
   * 问题: findByEmailWithPassword 每次生成新密码哈希
   * 修复: 直接返回 CSV 中存储的密码哈希
