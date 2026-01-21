@@ -1047,6 +1047,9 @@ func listDocsByPath(c *gin.Context) {
 		return
 	}
 
+	// 获取 WorkspaceContext
+	ctx := model.GetWorkspaceContext(c)
+
 	notebook := arg["notebook"].(string)
 	p := arg["path"].(string)
 	sortParam := arg["sort"]
@@ -1071,7 +1074,8 @@ func listDocsByPath(c *gin.Context) {
 		showHidden = arg["showHidden"].(bool)
 	}
 
-	files, totals, err := model.ListDocTree(notebook, p, sortMode, flashcard, showHidden, maxListCount)
+	// 传递 WorkspaceContext
+	files, totals, err := model.ListDocTree(ctx, notebook, p, sortMode, flashcard, showHidden, maxListCount)
 	if err != nil {
 		ret.Code = -1
 		ret.Msg = err.Error()

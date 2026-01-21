@@ -230,7 +230,7 @@ type FileInfo struct {
 	isdir bool
 }
 
-func ListDocTree(boxID, listPath string, sortMode int, flashcard, showHidden bool, maxListCount int) (ret []*File, totals int, err error) {
+func ListDocTree(ctx *WorkspaceContext, boxID, listPath string, sortMode int, flashcard, showHidden bool, maxListCount int) (ret []*File, totals int, err error) {
 	//os.MkdirAll("pprof", 0755)
 	//cpuProfile, _ := os.Create("pprof/cpu_profile_list_doc_tree")
 	//pprof.StartCPUProfile(cpuProfile)
@@ -275,7 +275,7 @@ func ListDocTree(boxID, listPath string, sortMode int, flashcard, showHidden boo
 	}
 
 	start = time.Now()
-	boxLocalPath := filepath.Join(util.DataDir, box.ID)
+	boxLocalPath := filepath.Join(ctx.GetDataDir(), box.ID)
 	var docs []*File
 	for _, file := range files {
 		if file.isdir {
@@ -2003,7 +2003,7 @@ func (box *Box) setSortByConf(parentPath, id string) {
 }
 
 func (box *Box) addMaxSort(parentPath, id string) {
-	docs, _, err := ListDocTree(box.ID, parentPath, util.SortModeUnassigned, false, false, 102400)
+	docs, _, err := ListDocTree(GetDefaultWorkspaceContext(), box.ID, parentPath, util.SortModeUnassigned, false, false, 102400)
 	if err != nil {
 		logging.LogErrorf("list doc tree failed: %s", err)
 		return
@@ -2018,7 +2018,7 @@ func (box *Box) addMaxSort(parentPath, id string) {
 }
 
 func (box *Box) addMinSort(parentPath, id string) {
-	docs, _, err := ListDocTree(box.ID, parentPath, util.SortModeUnassigned, false, false, 1)
+	docs, _, err := ListDocTree(GetDefaultWorkspaceContext(), box.ID, parentPath, util.SortModeUnassigned, false, false, 1)
 	if err != nil {
 		logging.LogErrorf("list doc tree failed: %s", err)
 		return
@@ -2089,7 +2089,7 @@ func (box *Box) addSort(previousPath, id string) {
 	}
 
 	parentPath := path.Dir(previousPath)
-	docs, _, err := ListDocTree(box.ID, parentPath, util.SortModeUnassigned, false, false, Conf.FileTree.MaxListCount)
+	docs, _, err := ListDocTree(GetDefaultWorkspaceContext(), box.ID, parentPath, util.SortModeUnassigned, false, false, Conf.FileTree.MaxListCount)
 	if err != nil {
 		logging.LogErrorf("list doc tree failed: %s", err)
 		return

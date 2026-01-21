@@ -258,7 +258,7 @@ func Mount(boxID string) (alreadyMount bool, err error) {
 
 	box.Index()
 	// 缓存根一级的文档树展开
-	ListDocTree(box.ID, "/", util.SortModeUnassigned, false, false, Conf.FileTree.MaxListCount)
+	ListDocTree(GetDefaultWorkspaceContext(), box.ID, "/", util.SortModeUnassigned, false, false, Conf.FileTree.MaxListCount)
 	util.ClearPushProgress(100)
 
 	if reMountGuide {
