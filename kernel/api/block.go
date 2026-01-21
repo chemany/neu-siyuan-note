@@ -370,7 +370,10 @@ func getDocInfo(c *gin.Context) {
 	}
 
 	id := arg["id"].(string)
-	info := model.GetDocInfo(id)
+	
+	// 从 Gin Context 获取 WorkspaceContext
+	ctx := model.GetWorkspaceContext(c)
+	info := model.GetDocInfoWithContext(ctx, id)
 	if nil == info {
 		ret.Code = -1
 		ret.Msg = fmt.Sprintf(model.Conf.Language(15), id)
@@ -654,8 +657,11 @@ func getBlockInfo(c *gin.Context) {
 
 	id := arg["id"].(string)
 
+	// 从 Gin Context 获取 WorkspaceContext
+	ctx := model.GetWorkspaceContext(c)
+	
 	// 仅在此处使用带重建索引的加载函数，其他地方不要使用
-	tree, err := model.LoadTreeByBlockIDWithReindex(id)
+	tree, err := model.LoadTreeByBlockIDWithReindexAndContext(ctx, id)
 	if errors.Is(err, model.ErrIndexing) {
 		ret.Code = 3
 		ret.Msg = model.Conf.Language(56)

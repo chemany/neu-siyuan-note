@@ -182,6 +182,11 @@ var (
 )
 
 func LoadTreeByBlockIDWithReindex(id string) (ret *parse.Tree, err error) {
+	return LoadTreeByBlockIDWithReindexAndContext(GetDefaultWorkspaceContext(), id)
+}
+
+// LoadTreeByBlockIDWithReindexAndContext 使用 WorkspaceContext 加载树并在需要时重建索引
+func LoadTreeByBlockIDWithReindexAndContext(ctx *WorkspaceContext, id string) (ret *parse.Tree, err error) {
 	if "" == id {
 		logging.LogWarnf("block id is empty")
 		return nil, ErrTreeNotFound
@@ -207,7 +212,8 @@ func LoadTreeByBlockIDWithReindex(id string) (ret *parse.Tree, err error) {
 	}
 
 	luteEngine := util.NewLute()
-	ret, err = filesys.LoadTree(bt.BoxID, bt.Path, luteEngine)
+	dataDir := ctx.GetDataDir()
+	ret, err = filesys.LoadTreeWithDataDir(dataDir, bt.BoxID, bt.Path, luteEngine)
 	return
 }
 

@@ -54,9 +54,14 @@ type AttrView struct {
 }
 
 func GetDocInfo(blockID string) (ret *BlockInfo) {
+	return GetDocInfoWithContext(GetDefaultWorkspaceContext(), blockID)
+}
+
+// GetDocInfoWithContext 使用 WorkspaceContext 获取文档信息
+func GetDocInfoWithContext(ctx *WorkspaceContext, blockID string) (ret *BlockInfo) {
 	FlushTxQueue()
 
-	tree, err := LoadTreeByBlockID(blockID)
+	tree, err := LoadTreeByBlockIDWithContext(ctx, blockID)
 	if err != nil {
 		logging.LogErrorf("load tree by root id [%s] failed: %s", blockID, err)
 		return
