@@ -841,7 +841,7 @@ func (conf *AppConf) BoxNames(boxIDs []string) (ret map[string]string) {
 
 func (conf *AppConf) GetBoxes() (ret []*Box) {
 	ret = []*Box{}
-	notebooks, err := ListNotebooks()
+	notebooks, err := ListNotebooks(GetDefaultWorkspaceContext())
 	if err != nil {
 		return
 	}
@@ -858,7 +858,7 @@ func (conf *AppConf) GetBoxes() (ret []*Box) {
 
 func (conf *AppConf) GetOpenedBoxes() (ret []*Box) {
 	ret = []*Box{}
-	notebooks, err := ListNotebooks()
+	notebooks, err := ListNotebooks(GetDefaultWorkspaceContext())
 	if err != nil {
 		return
 	}
@@ -873,7 +873,7 @@ func (conf *AppConf) GetOpenedBoxes() (ret []*Box) {
 
 func (conf *AppConf) GetClosedBoxes() (ret []*Box) {
 	ret = []*Box{}
-	notebooks, err := ListNotebooks()
+	notebooks, err := ListNotebooks(GetDefaultWorkspaceContext())
 	if err != nil {
 		return
 	}

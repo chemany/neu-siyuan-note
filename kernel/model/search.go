@@ -56,7 +56,7 @@ func ListInvalidBlockRefs(page, pageSize int) (ret []*Block, matchedBlockCount, 
 	refBlockMap := map[string][]string{}
 	blockMap := map[string]bool{}
 	var invalidBlockIDs []string
-	notebooks, err := ListNotebooks()
+	notebooks, err := ListNotebooks(GetDefaultWorkspaceContext())
 	if err != nil {
 		return
 	}

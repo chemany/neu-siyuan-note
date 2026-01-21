@@ -86,11 +86,12 @@ func StatJob() {
 	}
 }
 
-func ListNotebooks() (ret []*Box, err error) {
+func ListNotebooks(ctx *WorkspaceContext) (ret []*Box, err error) {
 	ret = []*Box{}
-	dirs, err := os.ReadDir(util.DataDir)
+	dataDir := ctx.GetDataDir()
+	dirs, err := os.ReadDir(dataDir)
 	if err != nil {
-		logging.LogErrorf("read dir [%s] failed: %s", util.DataDir, err)
+		logging.LogErrorf("read dir [%s] failed: %s", dataDir, err)
 		return ret, err
 	}
 	for _, dir := range dirs {
@@ -108,7 +109,7 @@ func ListNotebooks() (ret []*Box, err error) {
 		}
 
 		boxConf := conf.NewBoxConf()
-		boxDirPath := filepath.Join(util.DataDir, id)
+		boxDirPath := filepath.Join(dataDir, id)
 		boxConfPath := filepath.Join(boxDirPath, ".siyuan", "conf.json")
 		isExistConf := filelock.IsExist(boxConfPath)
 		if !isExistConf {

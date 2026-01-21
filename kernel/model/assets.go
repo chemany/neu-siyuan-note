@@ -536,7 +536,7 @@ func GetAssetAbsPath(relativePath string) (ret string, err error) {
 	}
 
 	// 在笔记本下搜索
-	notebooks, err := ListNotebooks()
+	notebooks, err := ListNotebooks(GetDefaultWorkspaceContext())
 	if err != nil {
 		err = errors.New(Conf.Language(0))
 		return
@@ -906,7 +906,7 @@ func RenameAsset(oldPath, newName string) (newPath string, err error) {
 
 	oldName := path.Base(oldPath)
 
-	notebooks, err := ListNotebooks()
+	notebooks, err := ListNotebooks(GetDefaultWorkspaceContext())
 	if err != nil {
 		return
 	}
@@ -1002,7 +1002,7 @@ func UnusedAssets() (ret []string) {
 		return
 	}
 	linkDestMap := map[string]bool{}
-	notebooks, err := ListNotebooks()
+	notebooks, err := ListNotebooks(GetDefaultWorkspaceContext())
 	if err != nil {
 		return
 	}
@@ -1203,7 +1203,7 @@ func MissingAssets() (ret []string) {
 	if err != nil {
 		return
 	}
-	notebooks, err := ListNotebooks()
+	notebooks, err := ListNotebooks(GetDefaultWorkspaceContext())
 	if err != nil {
 		return
 	}
@@ -1600,7 +1600,7 @@ func getRemoteAssetsLinkDestsInTree(tree *parse.Tree, onlyImg bool) (nodes []*as
 
 // allAssetAbsPaths 返回 asset 相对路径（assets/xxx）到绝对路径（F:\SiYuan\data\assets\xxx）的映射。
 func allAssetAbsPaths() (assetsAbsPathMap map[string]string, err error) {
-	notebooks, err := ListNotebooks()
+	notebooks, err := ListNotebooks(GetDefaultWorkspaceContext())
 	if err != nil {
 		return
 	}

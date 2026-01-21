@@ -400,6 +400,9 @@ func lsNotebooks(c *gin.Context) {
 	ret := gulu.Ret.NewResult()
 	defer c.JSON(http.StatusOK, ret)
 
+	// 获取 WorkspaceContext
+	ctx := model.GetWorkspaceContext(c)
+
 	flashcard := false
 
 	// 兼容旧版接口，不能直接使用 util.JsonArg()
@@ -415,7 +418,8 @@ func lsNotebooks(c *gin.Context) {
 		notebooks = model.GetFlashcardNotebooks()
 	} else {
 		var err error
-		notebooks, err = model.ListNotebooks()
+		// 传递 WorkspaceContext
+		notebooks, err = model.ListNotebooks(ctx)
 		if err != nil {
 			return
 		}

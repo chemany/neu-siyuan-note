@@ -50,7 +50,7 @@ func CreateBox(name string) (id string, err error) {
 	createDocLock.Lock()
 	defer createDocLock.Unlock()
 
-	boxes, _ := ListNotebooks()
+	boxes, _ := ListNotebooks(GetDefaultWorkspaceContext())
 	for i, b := range boxes {
 		c := b.GetConf()
 		c.Sort = i + 1
@@ -203,7 +203,7 @@ func Mount(boxID string) (alreadyMount bool, err error) {
 			return
 		}
 
-		boxes, _ := ListNotebooks()
+		boxes, _ := ListNotebooks(GetDefaultWorkspaceContext())
 		var sort int
 		if len(boxes) > 0 {
 			sort = boxes[0].Sort - 1
