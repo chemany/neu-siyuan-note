@@ -621,6 +621,29 @@ func getVectorizedAssets(c *gin.Context) {
 	}
 }
 
+// batchVectorizeAllAssets 批量向量化所有未向量化的资源文件
+func batchVectorizeAllAssets(c *gin.Context) {
+	ret := gulu.Ret.NewResult()
+	defer c.JSON(http.StatusOK, ret)
+
+	// 启动后台任务
+	go model.BatchVectorizeAllAssets(util.DataDir)
+
+	ret.Data = map[string]interface{}{
+		"success": true,
+		"message": "批量向量化任务已启动，将在后台运行",
+	}
+}
+
+// getVectorizeProgress 获取批量向量化进度
+func getVectorizeProgress(c *gin.Context) {
+	ret := gulu.Ret.NewResult()
+	defer c.JSON(http.StatusOK, ret)
+
+	progress := model.GetVectorizeProgress()
+	ret.Data = progress
+}
+
 // ===== OCR API (PaddleOCR) =====
 
 // ocrAsset 对资源文件进行 OCR 识别

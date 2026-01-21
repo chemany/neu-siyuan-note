@@ -22,12 +22,15 @@ import (
 	"crypto/md5"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/88250/gulu"
@@ -42,6 +45,8 @@ import (
 
 func init() {
 	StartAssetVectorizeWorker()
+	// 暂时禁用全局向量化服务，避免索引队列堵塞
+	// StartGlobalVectorizeService()
 }
 
 func ChatGPT(msg string) (ret string) {
@@ -331,7 +336,8 @@ func EnhanceMessagesWithRAG(messages []openai.ChatCompletionMessage, allowedAsse
 		if err == nil && len(assets) > 0 {
 			ragContext.WriteString("以下是所有相关附件的完整内容总结参考（请以此为准，严禁强行关联不同来源的技术）：\n\n")
 			totalLen := 0
-			const maxTotalLen = 8000 // 限制总长度，确保在 20k Token 窗口内留出 50%+ 的余量
+			// 适配 72k Token 模型：将总结上限提升至 100,000 字符 (约 30k+ Token)
+			const maxTotalLen = 100000 
 			for _, asset := range assets {
 				if totalLen > maxTotalLen { break }
 				// 跨笔记本隔离：如果指定了允许的附件列表，则只包含列表中的文件
@@ -360,13 +366,14 @@ func EnhanceMessagesWithRAG(messages []openai.ChatCompletionMessage, allowedAsse
 			}
 		}
 	} else {
-		// 问答模式：执行分块检索 (Top-10)
-		chunks, err := SemanticSearchAssetChunks(util.DataDir, userQuery, 10, allowedAssets)
+		// 问答模式：执行高配版分块检索 (Top-30)
+		chunks, err := SemanticSearchAssetChunks(util.DataDir, userQuery, 30, allowedAssets)
 		if err == nil && len(chunks) > 0 {
 			logging.LogInfof("RAG: 问答模式，找到 %d 个相关分块", len(chunks))
 			ragContext.WriteString("以下是与用户问题高度相关的文档片段，请据此回答。注意区分不同来源，不要强行拼凑逻辑：\n\n")
+			ragContext.WriteString("以下是与用户问题高度相关的文档片段，请据此回答。注意区分不同来源，不要强行拼凑逻辑：\n\n")
 			totalLen := 0
-			const maxQALen = 6000 // 问答模式严格限制，核心逻辑优先
+			const maxQALen = 30000 // 问答模式大幅扩容至 30,000 字符，提供深层上下文
 			for i, chunk := range chunks {
 				if totalLen+len(chunk.Content) > maxQALen {
 					ragContext.WriteString("...(由于长度限制，后续片段已忽略)\n")
@@ -1000,11 +1007,6 @@ func VectorizeAsset(assetPath string) (*AssetVector, error) {
 			Content: chunkText,
 			Vector:  vector,
 		})
-
-		// 简单的 API 保护
-		if len(chunks)%10 == 0 {
-			time.Sleep(500 * time.Millisecond)
-		}
 		
 		if end == len(runes) {
 			break
@@ -1203,9 +1205,128 @@ func GetVectorizedAssets(dataDir string) ([]*AssetVector, error) {
 type assetSearchResult struct {
 	chunk      *VectorChunk
 	similarity float64
+	rerankerScore float64  // 重排序分数
 }
 
-// SemanticSearchAssetChunks 资源文件分块语义搜索
+// RerankerService 重排序服务
+type RerankerService struct {
+	provider string
+	model    string
+	apiKey   string
+	baseURL  string
+	enabled  bool
+}
+
+// NewRerankerService 创建重排序服务实例
+func NewRerankerService() *RerankerService {
+	// 使用全局向量化配置
+	config := loadGlobalEmbeddingConfig()
+	if config == nil || !config.Enabled {
+		return &RerankerService{enabled: false}
+	}
+
+	return &RerankerService{
+		provider: config.Provider,
+		model:    "BAAI/bge-reranker-v2-m3", // 固定使用重排序模型
+		apiKey:   config.APIKey,
+		baseURL:  config.APIBaseURL,
+		enabled:  true,
+	}
+}
+
+// IsEnabled 检查重排序服务是否启用
+func (s *RerankerService) IsEnabled() bool {
+	return s != nil && s.enabled
+}
+
+// RerankRequest 重排序请求
+type RerankRequest struct {
+	Model string   `json:"model"`
+	Query string   `json:"query"`
+	Documents []string `json:"documents"`
+}
+
+// RerankResponse 重排序响应
+type RerankResponse struct {
+	Results []RerankResult `json:"results"`
+}
+
+// RerankResult 单个重排序结果
+type RerankResult struct {
+	Index int     `json:"index"`
+	Score float64 `json:"relevance_score"`
+}
+
+// Rerank 对文档列表进行重排序
+func (s *RerankerService) Rerank(query string, documents []string) ([]float64, error) {
+	if !s.IsEnabled() {
+		return nil, fmt.Errorf("重排序服务未启用")
+	}
+
+	if len(documents) == 0 {
+		return []float64{}, nil
+	}
+
+	reqBody := RerankRequest{
+		Model:     s.model,
+		Query:     query,
+		Documents: documents,
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("序列化请求失败: %v", err)
+	}
+
+	// 构建 API URL
+	apiURL := s.baseURL
+	if !strings.HasSuffix(apiURL, "/") {
+		apiURL += "/"
+	}
+	apiURL += "rerank"
+
+	req, err := http.NewRequest("POST", apiURL, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("创建请求失败: %v", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+s.apiKey)
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("请求失败: %v", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("读取响应失败: %v", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("API 返回错误 %d: %s", resp.StatusCode, string(body))
+	}
+
+	var rerankResp RerankResponse
+	if err := json.Unmarshal(body, &rerankResp); err != nil {
+		return nil, fmt.Errorf("解析响应失败: %v", err)
+	}
+
+	// 构建分数数组（按原始索引顺序）
+	scores := make([]float64, len(documents))
+	for _, result := range rerankResp.Results {
+		if result.Index >= 0 && result.Index < len(scores) {
+			scores[result.Index] = result.Score
+		}
+	}
+
+	return scores, nil
+}
+
+// SemanticSearchAssetChunks 资源文件分块语义搜索（带重排序）
+// SemanticSearchAssetChunks 资源文件分块语义搜索（带重排序）
 func SemanticSearchAssetChunks(dataDir, query string, limit int, allowedAssets []string) ([]*VectorChunk, error) {
 	embeddingService := NewEmbeddingService()
 	if embeddingService == nil || !embeddingService.IsEnabled() {
@@ -1241,15 +1362,65 @@ func SemanticSearchAssetChunks(dataDir, query string, limit int, allowedAssets [
 		for _, chunk := range asset.Chunks {
 			sim := cosineSimilarity(queryVector, chunk.Vector)
 			if sim > 0.4 {
-				results = append(results, assetSearchResult{chunk, sim})
+				results = append(results, assetSearchResult{
+					chunk:      chunk,
+					similarity: sim,
+					rerankerScore: 0, // 初始化为 0
+				})
 			}
 		}
 	}
 
+	// 按向量相似度排序
 	sort.Slice(results, func(i, j int) bool {
 		return results[i].similarity > results[j].similarity
 	})
 
+	// 第一阶段：向量检索，取 Top-K（K = limit * 3，为重排序提供更多候选）
+	firstStageLimit := limit * 3
+	if firstStageLimit > 100 {
+		firstStageLimit = 100 // 最多 100 个候选
+	}
+	if len(results) > firstStageLimit {
+		results = results[:firstStageLimit]
+	}
+
+	// 第二阶段：重排序（如果启用）
+	rerankerService := NewRerankerService()
+	if rerankerService != nil && rerankerService.IsEnabled() && len(results) > 0 {
+		logging.LogInfof("RAG: 使用重排序模型优化检索结果，候选数: %d", len(results))
+		
+		// 准备文档列表
+		documents := make([]string, len(results))
+		for i, r := range results {
+			documents[i] = r.chunk.Content
+		}
+
+		// 调用重排序 API
+		scores, err := rerankerService.Rerank(query, documents)
+		if err != nil {
+			logging.LogWarnf("重排序失败，使用原始向量相似度排序: %v", err)
+		} else {
+			// 更新重排序分数
+			for i := range results {
+				if i < len(scores) {
+					results[i].rerankerScore = scores[i]
+				}
+			}
+
+			// 按重排序分数重新排序
+			sort.Slice(results, func(i, j int) bool {
+				return results[i].rerankerScore > results[j].rerankerScore
+			})
+
+			logging.LogInfof("RAG: 重排序完成，Top-3 分数: %.4f, %.4f, %.4f", 
+				results[0].rerankerScore,
+				getScoreOrZero(results, 1),
+				getScoreOrZero(results, 2))
+		}
+	}
+
+	// 返回最终的 Top-N 结果
 	if len(results) > limit {
 		results = results[:limit]
 	}
@@ -1260,6 +1431,14 @@ func SemanticSearchAssetChunks(dataDir, query string, limit int, allowedAssets [
 	}
 
 	return finalResults, nil
+}
+
+// getScoreOrZero 安全获取分数，避免越界
+func getScoreOrZero(results []assetSearchResult, index int) float64 {
+	if index < len(results) {
+		return results[index].rerankerScore
+	}
+	return 0.0
 }
 
 // 异步向量化队列（只需要 assetPath，向量文件存储在同目录）
@@ -1407,8 +1586,56 @@ func ParseAttachment(assetPath string) (string, error) {
 }
 
 // parsePDF 使用pdftotext解析PDF文件，如果是扫描版则自动调用OCR
+// 优先使用已有的 Markdown 文件（OCR 生成的格式化文档）
 func parsePDF(filePath string) (string, error) {
-	// 使用pdftotext命令行工具
+	// 1. 优先检查是否有 Markdown 文件（OCR 生成的格式化文档）
+	mdPath := filePath + ".md"
+	if gulu.File.IsExist(mdPath) {
+		logging.LogInfof("发现 Markdown 文件，直接使用: %s", mdPath)
+		mdContent, err := os.ReadFile(mdPath)
+		if err == nil && len(mdContent) > 100 {
+			content := string(mdContent)
+			// 移除 Markdown 元数据头部
+			if strings.HasPrefix(content, "#") {
+				// 跳过标题和元数据
+				lines := strings.Split(content, "\n")
+				var contentLines []string
+				skipHeader := true
+				for _, line := range lines {
+					if skipHeader {
+						if strings.HasPrefix(line, "---") || strings.HasPrefix(line, ">") || strings.HasPrefix(line, "#") {
+							continue
+						}
+						if strings.TrimSpace(line) == "" {
+							continue
+						}
+						skipHeader = false
+					}
+					contentLines = append(contentLines, line)
+				}
+				content = strings.Join(contentLines, "\n")
+			}
+			
+			content = strings.TrimSpace(content)
+			if len(content) > 100 {
+				logging.LogInfof("使用 Markdown 文件内容，长度: %d 字符", len(content))
+				return content, nil
+			}
+		}
+	}
+	
+	// 2. 检查是否有 OCR JSON 文件（可以快速读取）
+	ocrJSONPath := filePath + ".ocr.json"
+	if gulu.File.IsExist(ocrJSONPath) {
+		logging.LogInfof("发现 OCR JSON 文件，读取文本: %s", ocrJSONPath)
+		text, err := GetOCRText(filePath)
+		if err == nil && len(strings.TrimSpace(text)) > 100 {
+			logging.LogInfof("使用 OCR JSON 文本，长度: %d 字符", len(text))
+			return text, nil
+		}
+	}
+	
+	// 3. 使用 pdftotext 命令行工具
 	cmd := exec.Command("pdftotext", "-enc", "UTF-8", "-layout", filePath, "-")
 	output, err := cmd.Output()
 	if err != nil {
@@ -1682,4 +1909,456 @@ func parseCsv(filePath string) (string, error) {
 		content = content[:50000] + "\n...(内容已截断)"
 	}
 	return content, nil
+}
+
+
+// 批量向量化进度跟踪
+type VectorizeProgress struct {
+	IsRunning       bool      `json:"isRunning"`
+	TotalFiles      int       `json:"totalFiles"`
+	ProcessedFiles  int       `json:"processedFiles"`
+	SuccessCount    int       `json:"successCount"`
+	FailedCount     int       `json:"failedCount"`
+	CurrentFile     string    `json:"currentFile"`
+	StartTime       time.Time `json:"startTime"`
+	LastUpdateTime  time.Time `json:"lastUpdateTime"`
+	EstimatedTimeLeft string  `json:"estimatedTimeLeft"`
+}
+
+var (
+	vectorizeProgress     VectorizeProgress
+	vectorizeProgressLock sync.RWMutex
+)
+
+// GetVectorizeProgress 获取向量化进度
+func GetVectorizeProgress() VectorizeProgress {
+	vectorizeProgressLock.RLock()
+	defer vectorizeProgressLock.RUnlock()
+	
+	progress := vectorizeProgress
+	
+	// 计算预计剩余时间
+	if progress.IsRunning && progress.ProcessedFiles > 0 {
+		elapsed := time.Since(progress.StartTime)
+		avgTimePerFile := elapsed / time.Duration(progress.ProcessedFiles)
+		remaining := progress.TotalFiles - progress.ProcessedFiles
+		estimatedTime := avgTimePerFile * time.Duration(remaining)
+		
+		if estimatedTime < time.Minute {
+			progress.EstimatedTimeLeft = fmt.Sprintf("%d 秒", int(estimatedTime.Seconds()))
+		} else if estimatedTime < time.Hour {
+			progress.EstimatedTimeLeft = fmt.Sprintf("%d 分钟", int(estimatedTime.Minutes()))
+		} else {
+			progress.EstimatedTimeLeft = fmt.Sprintf("%.1f 小时", estimatedTime.Hours())
+		}
+	}
+	
+	return progress
+}
+
+// updateVectorizeProgress 更新向量化进度
+func updateVectorizeProgress(currentFile string, success bool) {
+	vectorizeProgressLock.Lock()
+	defer vectorizeProgressLock.Unlock()
+	
+	vectorizeProgress.ProcessedFiles++
+	if success {
+		vectorizeProgress.SuccessCount++
+	} else {
+		vectorizeProgress.FailedCount++
+	}
+	vectorizeProgress.CurrentFile = currentFile
+	vectorizeProgress.LastUpdateTime = time.Now()
+}
+
+// BatchVectorizeAllAssets 批量向量化所有未向量化的资源文件
+func BatchVectorizeAllAssets(dataDir string) {
+	// 检查是否已经在运行
+	vectorizeProgressLock.Lock()
+	if vectorizeProgress.IsRunning {
+		vectorizeProgressLock.Unlock()
+		logging.LogWarnf("批量向量化任务已在运行中")
+		return
+	}
+	
+	// 初始化进度
+	vectorizeProgress = VectorizeProgress{
+		IsRunning:      true,
+		StartTime:      time.Now(),
+		LastUpdateTime: time.Now(),
+	}
+	vectorizeProgressLock.Unlock()
+	
+	logging.LogInfof("开始批量向量化所有资源文件...")
+	
+	// 检查向量化服务是否启用
+	embeddingService := NewEmbeddingService()
+	if embeddingService == nil || !embeddingService.IsEnabled() {
+		logging.LogErrorf("向量化服务未启用或未配置")
+		vectorizeProgressLock.Lock()
+		vectorizeProgress.IsRunning = false
+		vectorizeProgressLock.Unlock()
+		return
+	}
+	
+	// 支持的文档格式
+	supportedExts := []string{".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".md", ".txt"}
+	
+	// 扫描 assets 目录
+	assetsDir := filepath.Join(dataDir, "assets")
+	if !gulu.File.IsDir(assetsDir) {
+		logging.LogWarnf("Assets 目录不存在: %s", assetsDir)
+		vectorizeProgressLock.Lock()
+		vectorizeProgress.IsRunning = false
+		vectorizeProgressLock.Unlock()
+		return
+	}
+	
+	// 收集需要向量化的文件
+	var filesToVectorize []string
+	
+	err := filepath.Walk(assetsDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil // 忽略错误，继续扫描
+		}
+		
+		if info.IsDir() {
+			return nil
+		}
+		
+		// 检查文件扩展名
+		ext := strings.ToLower(filepath.Ext(path))
+		isSupported := false
+		for _, supportedExt := range supportedExts {
+			if ext == supportedExt {
+				isSupported = true
+				break
+			}
+		}
+		
+		if !isSupported {
+			return nil
+		}
+		
+		// 检查是否已有向量文件
+		vectorFile := path + ".vectors.json"
+		if gulu.File.IsExist(vectorFile) {
+			return nil // 已向量化，跳过
+		}
+		
+		filesToVectorize = append(filesToVectorize, path)
+		return nil
+	})
+	
+	if err != nil {
+		logging.LogErrorf("扫描 assets 目录失败: %v", err)
+	}
+	
+	// 更新总文件数
+	vectorizeProgressLock.Lock()
+	vectorizeProgress.TotalFiles = len(filesToVectorize)
+	vectorizeProgressLock.Unlock()
+	
+	logging.LogInfof("发现 %d 个需要向量化的文件", len(filesToVectorize))
+	
+	if len(filesToVectorize) == 0 {
+		logging.LogInfof("没有需要向量化的文件")
+		vectorizeProgressLock.Lock()
+		vectorizeProgress.IsRunning = false
+		vectorizeProgressLock.Unlock()
+		return
+	}
+	
+	// 开始向量化
+	for _, filePath := range filesToVectorize {
+		fileName := filepath.Base(filePath)
+		logging.LogInfof("正在向量化: %s", fileName)
+		
+		// 执行向量化
+		_, err := VectorizeAsset(filePath)
+		success := err == nil
+		
+		if success {
+			logging.LogInfof("✓ 向量化成功: %s", fileName)
+		} else {
+			logging.LogErrorf("✗ 向量化失败: %s, 错误: %v", fileName, err)
+		}
+		
+		// 更新进度
+		updateVectorizeProgress(fileName, success)
+		
+		// 避免请求过快，每个文件间隔 2 秒
+		time.Sleep(2 * time.Second)
+	}
+	
+	// 完成
+	vectorizeProgressLock.Lock()
+	vectorizeProgress.IsRunning = false
+	vectorizeProgress.CurrentFile = ""
+	vectorizeProgressLock.Unlock()
+	
+	logging.LogInfof("批量向量化完成: 总计 %d 个文件, 成功 %d 个, 失败 %d 个",
+		vectorizeProgress.TotalFiles,
+		vectorizeProgress.SuccessCount,
+		vectorizeProgress.FailedCount)
+}
+
+
+// 全局速率限制器
+var (
+	vectorizeRateLimiter *time.Ticker
+	vectorizeSemaphore   chan struct{}
+)
+
+// StartGlobalVectorizeService 启动全局向量化服务
+// 定期扫描所有用户的文档，自动向量化未处理的文件
+// 优化版本：最大化利用 API 配额（RPM 2000, TPM 500,000）
+func StartGlobalVectorizeService() {
+	// 检查是否启用向量化服务
+	embeddingService := NewEmbeddingService()
+	if embeddingService == nil || !embeddingService.IsEnabled() {
+		logging.LogWarnf("向量化服务未启用，跳过全局向量化服务")
+		return
+	}
+	
+	logging.LogInfof("启动全局向量化服务（高性能模式）...")
+	logging.LogInfof("API 配额: RPM 2000, TPM 500,000")
+	
+	// 初始化速率限制器
+	// 目标：每分钟 1800 次请求（留 10% 余量）
+	// 每秒约 30 次请求
+	vectorizeRateLimiter = time.NewTicker(33 * time.Millisecond) // 约 30 req/s
+	
+	// 初始化并发控制（同时处理 20 个文档）
+	vectorizeSemaphore = make(chan struct{}, 20)
+	
+	go func() {
+		// 启动后等待 30 秒，让系统完全启动
+		time.Sleep(30 * time.Second)
+		
+		// 定期扫描间隔：每 10 分钟（更频繁的扫描）
+		ticker := time.NewTicker(10 * time.Minute)
+		defer ticker.Stop()
+		
+		// 立即执行一次
+		scanAndVectorizeAllUsers()
+		
+		// 定期执行
+		for range ticker.C {
+			scanAndVectorizeAllUsers()
+		}
+	}()
+}
+
+// scanAndVectorizeAllUsers 扫描并向量化所有用户的文档
+// 优化版本：并发处理，最大化利用 API 配额
+func scanAndVectorizeAllUsers() {
+	startTime := time.Now()
+	logging.LogInfof("[全局向量化] 开始扫描所有用户的文档（高性能模式）...")
+	
+	// 获取用户数据根目录
+	userDataRoot := "/root/code/MindOcean/user-data/notes"
+	
+	if !gulu.File.IsDir(userDataRoot) {
+		logging.LogWarnf("[全局向量化] 用户数据目录不存在: %s", userDataRoot)
+		return
+	}
+	
+	// 扫描所有用户目录
+	userDirs, err := os.ReadDir(userDataRoot)
+	if err != nil {
+		logging.LogErrorf("[全局向量化] 读取用户目录失败: %v", err)
+		return
+	}
+	
+	// 收集所有需要处理的文件
+	type FileTask struct {
+		Path     string
+		Username string
+		FileName string
+	}
+	
+	var allTasks []FileTask
+	supportedExts := []string{".pdf", ".doc", ".docx", ".xls", ".xlsx", ".pptx", ".md", ".txt"}
+	
+	for _, userDir := range userDirs {
+		if !userDir.IsDir() {
+			continue
+		}
+		
+		username := userDir.Name()
+		userAssetsDir := filepath.Join(userDataRoot, username, "assets")
+		
+		if !gulu.File.IsDir(userAssetsDir) {
+			continue
+		}
+		
+		// 扫描该用户的文档
+		filepath.Walk(userAssetsDir, func(path string, info os.FileInfo, err error) error {
+			if err != nil || info.IsDir() {
+				return nil
+			}
+			
+			// 检查文件扩展名
+			ext := strings.ToLower(filepath.Ext(path))
+			isSupported := false
+			for _, supportedExt := range supportedExts {
+				if ext == supportedExt {
+					isSupported = true
+					break
+				}
+			}
+			
+			if !isSupported {
+				return nil
+			}
+			
+			// 检查是否已有向量文件
+			vectorFile := path + ".vectors.json"
+			if gulu.File.IsExist(vectorFile) {
+				return nil // 已向量化，跳过
+			}
+			
+			allTasks = append(allTasks, FileTask{
+				Path:     path,
+				Username: username,
+				FileName: filepath.Base(path),
+			})
+			
+			return nil
+		})
+	}
+	
+	totalFiles := len(allTasks)
+	if totalFiles == 0 {
+		logging.LogInfof("[全局向量化] 本轮扫描完成: 没有需要向量化的文档")
+		return
+	}
+	
+	logging.LogInfof("[全局向量化] 发现 %d 个待处理文档，开始并发处理...", totalFiles)
+	
+	// 并发处理所有文件
+	var wg sync.WaitGroup
+	successCount := 0
+	failedCount := 0
+	var countMutex sync.Mutex
+	
+	for i, task := range allTasks {
+		wg.Add(1)
+		
+		go func(task FileTask, index int) {
+			defer wg.Done()
+			
+			// 获取信号量（限制并发数）
+			vectorizeSemaphore <- struct{}{}
+			defer func() { <-vectorizeSemaphore }()
+			
+			// 速率限制
+			<-vectorizeRateLimiter.C
+			
+			// 执行向量化
+			_, err := VectorizeAsset(task.Path)
+			
+			countMutex.Lock()
+			if err == nil {
+				successCount++
+				if (index+1)%10 == 0 || index+1 == totalFiles {
+					logging.LogInfof("[全局向量化] 进度: %d/%d (成功: %d, 失败: %d)",
+						index+1, totalFiles, successCount, failedCount)
+				}
+			} else {
+				failedCount++
+				logging.LogErrorf("[全局向量化] [%s] ✗ 向量化失败: %s, 错误: %v",
+					task.Username, task.FileName, err)
+			}
+			countMutex.Unlock()
+			
+		}(task, i)
+	}
+	
+	// 等待所有任务完成
+	wg.Wait()
+	
+	elapsed := time.Since(startTime)
+	logging.LogInfof("[全局向量化] 本轮扫描完成: 总计 %d 个文档, 成功 %d 个, 失败 %d 个, 耗时 %.1f 分钟",
+		totalFiles, successCount, failedCount, elapsed.Minutes())
+	
+	if successCount > 0 {
+		avgTime := elapsed.Seconds() / float64(successCount)
+		logging.LogInfof("[全局向量化] 平均处理速度: %.2f 秒/文档, 约 %.1f 文档/分钟",
+			avgTime, 60.0/avgTime)
+	}
+}
+
+// vectorizeUserAssets 向量化单个用户的资源文件
+// 返回: (处理数量, 成功数量, 失败数量)
+func vectorizeUserAssets(assetsDir string, username string) (int, int, int) {
+	// 支持的文档格式
+	supportedExts := []string{".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".md", ".txt"}
+	
+	processed := 0
+	success := 0
+	failed := 0
+	
+	// 扫描文档
+	err := filepath.Walk(assetsDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil // 忽略错误，继续扫描
+		}
+		
+		if info.IsDir() {
+			return nil
+		}
+		
+		// 检查文件扩展名
+		ext := strings.ToLower(filepath.Ext(path))
+		isSupported := false
+		for _, supportedExt := range supportedExts {
+			if ext == supportedExt {
+				isSupported = true
+				break
+			}
+		}
+		
+		if !isSupported {
+			return nil
+		}
+		
+		// 检查是否已有向量文件
+		vectorFile := path + ".vectors.json"
+		if gulu.File.IsExist(vectorFile) {
+			return nil // 已向量化，跳过
+		}
+		
+		// 限制每轮最多处理 10 个文档（避免占用太多资源）
+		if processed >= 10 {
+			return filepath.SkipDir
+		}
+		
+		fileName := filepath.Base(path)
+		logging.LogInfof("[全局向量化] [%s] 正在向量化: %s", username, fileName)
+		
+		// 执行向量化
+		_, err = VectorizeAsset(path)
+		processed++
+		
+		if err == nil {
+			success++
+			logging.LogInfof("[全局向量化] [%s] ✓ 向量化成功: %s", username, fileName)
+		} else {
+			failed++
+			logging.LogErrorf("[全局向量化] [%s] ✗ 向量化失败: %s, 错误: %v", username, fileName, err)
+		}
+		
+		// 每个文档间隔 3 秒
+		time.Sleep(3 * time.Second)
+		
+		return nil
+	})
+	
+	if err != nil {
+		logging.LogErrorf("[全局向量化] [%s] 扫描目录失败: %v", username, err)
+	}
+	
+	return processed, success, failed
 }

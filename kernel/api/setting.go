@@ -19,6 +19,7 @@ package api
 import (
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/88250/gulu"
@@ -607,6 +608,16 @@ func getCloudUser(c *gin.Context) {
 	defer c.JSON(http.StatusOK, ret)
 
 	if !model.IsAdminRoleContext(c) {
+		return
+	}
+
+	// Web 模式下跳过云端用户检查，避免超时
+	// 云端同步功能在 Web 模式下不可用
+	if os.Getenv("SIYUAN_WEB_MODE") == "true" {
+		ret.Data = map[string]interface{}{
+			"userName": "",
+			"userID": "",
+		}
 		return
 	}
 

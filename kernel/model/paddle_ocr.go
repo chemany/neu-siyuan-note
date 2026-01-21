@@ -94,18 +94,21 @@ func PaddleOCRHealthCheck() (bool, string) {
 		return false, "OCR 服务未启用"
 	}
 
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Get(config.BaseURL + "/health")
+	// Umi-OCR 没有 /health 端点，改为检查根路径
+	// 增加超时时间到 30 秒，因为 OCR 服务可能正在处理其他请求
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Get(config.BaseURL + "/")
 	if err != nil {
 		return false, fmt.Sprintf("OCR 服务连接失败: %v", err)
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		return false, fmt.Sprintf("OCR 服务状态异常: %d", resp.StatusCode)
+	// 只要能连接上就认为服务正常（Umi-OCR 根路径返回版本信息）
+	if resp.StatusCode == http.StatusOK {
+		return true, "OCR 服务正常"
 	}
 
-	return true, "OCR 服务正常"
+	return false, fmt.Sprintf("OCR 服务状态异常: %d", resp.StatusCode)
 }
 
 // PaddleOCRFromBase64 使用 base64 图片进行 OCR
@@ -178,7 +181,152 @@ func saveOCRResult(result *OCRAssetResult) error {
 	if err != nil {
 		return fmt.Errorf("序列化 OCR 结果失败: %v", err)
 	}
-	return os.WriteFile(ocrPath, data, 0644)
+	
+	// 保存 JSON 文件
+	if err := os.WriteFile(ocrPath, data, 0644); err != nil {
+		return err
+	}
+	
+	// 同时生成 Markdown 文档
+	if err := saveOCRAsMarkdown(result); err != nil {
+		logging.LogWarnf("生成 Markdown 文档失败: %v", err)
+		// 不返回错误，因为 JSON 已经保存成功
+	}
+	
+	return nil
+}
+
+// saveOCRAsMarkdown 将 OCR 结果保存为 Markdown 格式
+func saveOCRAsMarkdown(result *OCRAssetResult) error {
+	// 生成 Markdown 文件路径：源文件名 + .md
+	mdPath := result.AssetPath + ".md"
+	
+	// 清理文件名用于标题
+	cleanName := result.FileName
+	cleanName = strings.ReplaceAll(cleanName, "amp;40;", "(")
+	cleanName = strings.ReplaceAll(cleanName, "amp;41;", ")")
+	
+	var content strings.Builder
+	
+	// 添加文档头部
+	content.WriteString(fmt.Sprintf("# %s\n\n", cleanName))
+	content.WriteString("> 本文档由 OCR 识别结果自动生成\n\n")
+	content.WriteString("---\n\n")
+	
+	// 处理文本内容
+	texts := make([]string, 0, len(result.OCRResults))
+	for _, item := range result.OCRResults {
+		text := strings.TrimSpace(item.Text)
+		if text != "" {
+			texts = append(texts, text)
+		}
+	}
+	
+	// 格式化文本为 Markdown
+	currentParagraph := make([]string, 0)
+	
+	for i, text := range texts {
+		// 判断是否为标题
+		isTitle := false
+		titleLevel := 0
+		
+		if len(text) < 50 {
+			// 检查章节标题（如 1.1、1.2.3 等）
+			if len(text) > 0 && text[0] >= '0' && text[0] <= '9' {
+				if len(text) < 3 || text[1] == ' ' || text[1] == '.' {
+					isTitle = true
+					titleLevel = 1
+				} else if len(text) >= 3 && strings.Contains(text[:5], ".") {
+					dotCount := strings.Count(text[:5], ".")
+					if dotCount == 1 {
+						titleLevel = 2
+					} else if dotCount >= 2 {
+						titleLevel = 3
+					}
+					isTitle = true
+				}
+			}
+			
+			// 关键词标题
+			keywords := []string{"项目", "编制", "评价", "概况", "分析", "措施", "结论", "依据", "目的", "等级", "范围", "保护", "因子"}
+			for _, keyword := range keywords {
+				if strings.Contains(text, keyword) && !strings.Contains(text, "。") && len(text) < 30 {
+					isTitle = true
+					if titleLevel == 0 {
+						titleLevel = 2
+					}
+					break
+				}
+			}
+		}
+		
+		// 检查是否为列表项
+		isListItem := false
+		if strings.HasPrefix(text, "(") || strings.HasPrefix(text, "（") ||
+			strings.HasPrefix(text, "①") || strings.HasPrefix(text, "②") ||
+			strings.HasPrefix(text, "③") || strings.HasPrefix(text, "④") ||
+			strings.HasPrefix(text, "⑤") || strings.HasPrefix(text, "⑥") ||
+			strings.HasPrefix(text, "⑦") || strings.HasPrefix(text, "⑧") ||
+			strings.HasPrefix(text, "⑨") || strings.HasPrefix(text, "⑩") {
+			isListItem = true
+		}
+		
+		if isTitle {
+			// 输出之前的段落
+			if len(currentParagraph) > 0 {
+				content.WriteString(strings.Join(currentParagraph, ""))
+				content.WriteString("\n\n")
+				currentParagraph = currentParagraph[:0]
+			}
+			
+			// 添加标题
+			switch titleLevel {
+			case 1:
+				content.WriteString(fmt.Sprintf("\n## %s\n\n", text))
+			case 2:
+				content.WriteString(fmt.Sprintf("\n### %s\n\n", text))
+			case 3:
+				content.WriteString(fmt.Sprintf("\n#### %s\n\n", text))
+			default:
+				content.WriteString(fmt.Sprintf("\n**%s**\n\n", text))
+			}
+		} else if isListItem {
+			// 输出之前的段落
+			if len(currentParagraph) > 0 {
+				content.WriteString(strings.Join(currentParagraph, ""))
+				content.WriteString("\n\n")
+				currentParagraph = currentParagraph[:0]
+			}
+			
+			// 添加列表项
+			content.WriteString(fmt.Sprintf("- %s\n", text))
+		} else {
+			// 普通文本
+			currentParagraph = append(currentParagraph, text)
+			
+			// 如果文本以句号、分号结尾，或者下一个是标题，则结束段落
+			if strings.HasSuffix(text, "。") || strings.HasSuffix(text, "；") ||
+				(i < len(texts)-1 && len(texts[i+1]) < 30) {
+				content.WriteString(strings.Join(currentParagraph, ""))
+				content.WriteString("\n\n")
+				currentParagraph = currentParagraph[:0]
+			}
+		}
+	}
+	
+	// 输出最后的段落
+	if len(currentParagraph) > 0 {
+		content.WriteString(strings.Join(currentParagraph, ""))
+		content.WriteString("\n")
+	}
+	
+	// 写入 Markdown 文件
+	if err := os.WriteFile(mdPath, []byte(content.String()), 0644); err != nil {
+		return fmt.Errorf("写入 Markdown 文件失败: %v", err)
+	}
+	
+	logging.LogInfof("已生成 Markdown 文档: %s", mdPath)
+	return nil
 }
 
 // loadOCRResult 加载 OCR 结果

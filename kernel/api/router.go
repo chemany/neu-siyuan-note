@@ -530,6 +530,12 @@ func ServeAPI(ginServer *gin.Engine) {
 	// 资源文件向量化API
 	ginServer.Handle("POST", "/api/ai/vectorizeAsset", model.CheckWebAuth, model.CheckAdminRole, vectorizeAsset)
 	ginServer.Handle("POST", "/api/ai/getVectorizedAssets", model.CheckWebAuth, getVectorizedAssets)
+	ginServer.Handle("POST", "/api/ai/batchVectorizeAllAssets", model.CheckWebAuth, model.CheckAdminRole, batchVectorizeAllAssets)
+	ginServer.Handle("GET", "/api/ai/getVectorizeProgress", model.CheckWebAuth, getVectorizeProgress)
+	
+	// 内部 API（仅 localhost 可访问，无需认证）
+	ginServer.Handle("POST", "/api/internal/batchVectorizeAllAssets", model.CheckLocalhost, batchVectorizeAllAssets)
+	ginServer.Handle("GET", "/api/internal/getVectorizeProgress", model.CheckLocalhost, getVectorizeProgress)
 
 	// OCR API (PaddleOCR)
 	ginServer.Handle("POST", "/api/ai/ocrAsset", model.CheckWebAuth, ocrAsset)

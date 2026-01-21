@@ -177,10 +177,15 @@ export const syncGuide = (app?: App) => {
     }
     /// #endif
 
-    // 🔥 简化流程：移除密码设置检查，直接进入同步
+    // 检查是否已设置密钥，如果没有则提示用户手动设置
     if (!window.siyuan.config.repo.key) {
-        // 自动生成一个默认密钥，无需用户输入密码
-        autoInitKey();
+        showMessage("⚠️ 请先设置数据仓库密钥", 5000, "error");
+        /// #if !MOBILE
+        if (app) {
+            const dialogSetting = openSetting(app);
+            dialogSetting.element.querySelector('.b3-tab-bar [data-name="repos"]').dispatchEvent(new CustomEvent("click"));
+        }
+        /// #endif
         return;
     }
 
@@ -191,72 +196,34 @@ export const syncGuide = (app?: App) => {
     syncNow();
 };
 
-// 🆕 自动初始化密钥（无需用户输入密码）
-const autoInitKey = () => {
-    // 使用设备ID和时间戳生成唯一密钥
-    const deviceKey = window.siyuan.config.system.id || 'default-device';
-    const autoPass = `auto-${deviceKey}-${Date.now()}`;
-
-    fetchPost("/api/repo/initRepoKeyFromPassphrase", { pass: autoPass }, (response) => {
-        window.siyuan.config.repo.key = response.data.key;
-        showMessage("✅ 已自动生成同步密钥", 2000, "info");
-
-        // 继续同步流程
-        if (!window.siyuan.config.sync.enabled) {
-            setSync();
-        } else {
-            syncNow();
-        }
-    });
-};
-
 const syncNow = () => {
-    // 🔥 简化：默认使用智能合并模式
-    if (window.siyuan.config.sync.mode !== 3) {
-        // 添加合并模式提示
-        confirmDialog(
-            "🔄 开始同步",
-            `<div class="b3-dialog__content">
-                <div class="ft__on-surface" style="margin-bottom: 12px;">
-                    💡 使用<strong>智能合并模式</strong>，会自动合并本地和云端数据，避免内容丢失。
-                </div>
-                <div class="ft__secondary" style="font-size: 12px; line-height: 1.6;">
-                    • 优先保留较新的修改<br>
-                    • 发生冲突时会生成冲突文档<br>
-                    • 不会删除任何现有内容
-                </div>
-            </div>`,
-            () => {
-                fetchPost("/api/sync/performSync", { merge: true });
-            },
-            () => {
-                // 取消同步
-            }
-        );
-        return;
-    }
-
-    // 完全手动模式：提供更多选项
+    // 🔥 简化：默认提供选择，让用户决定同步方式
     const manualDialog = new Dialog({
         title: "🔄 选择同步方式",
         content: `<div class="b3-dialog__content">
+    <div style="background: var(--b3-theme-error-lighter); padding: 12px; border-radius: 4px; margin-bottom: 16px;">
+        <div style="font-weight: 500; margin-bottom: 8px;">⚠️ 检测到云端数据密钥不匹配</div>
+        <div style="font-size: 12px; line-height: 1.6;">
+            云端数据是用不同的密钥加密的。建议选择"上传到云端"覆盖旧数据，或先备份后清空云端。
+        </div>
+    </div>
     <label class="fn__flex b3-label" style="margin-bottom: 16px;">
-        <input type="radio" name="syncMode" value="merge" checked>
+        <input type="radio" name="syncMode" value="upload" checked>
         <span class="fn__space"></span>
         <div>
-            <div style="font-weight: 500;">🔀 智能合并（推荐）</div>
+            <div style="font-weight: 500;">⬆️ 上传到云端（推荐）</div>
             <div class="b3-label__text">
-                自动合并本地和云端数据，优先保留较新修改，冲突时生成冲突文档
+                用本地数据覆盖云端数据，解决密钥不匹配问题
             </div>
         </div>
     </label>
     <label class="fn__flex b3-label" style="margin-bottom: 16px;">
-        <input type="radio" name="syncMode" value="upload">
+        <input type="radio" name="syncMode" value="merge">
         <span class="fn__space"></span>
         <div>
-            <div style="font-weight: 500;">⬆️ 上传到云端</div>
+            <div style="font-weight: 500;">🔀 智能合并</div>
             <div class="b3-label__text">
-                ${window.siyuan.languages.uploadData2CloudTip}
+                自动合并本地和云端数据（如果密钥不匹配会失败）
             </div>
         </div>
     </label>
@@ -266,13 +233,13 @@ const syncNow = () => {
         <div>
             <div style="font-weight: 500;">⬇️ 从云端下载</div>
             <div class="b3-label__text">
-                ${window.siyuan.languages.downloadDataFromCloudTip}
+                用云端数据覆盖本地数据（如果密钥不匹配会失败）
             </div>
         </div>
     </label>
     <div class="fn__hr"></div>
     <div style="background: var(--b3-theme-surface-lighter); padding: 12px; border-radius: 4px; font-size: 12px; line-height: 1.6;">
-        💡 <strong>提示</strong>：首次同步建议选择"智能合并"，系统会自动处理数据合并，确保不丢失内容。
+        💡 <strong>提示</strong>：如果云端数据不重要，选择"上传到云端"是最简单的解决方案。
     </div>
 </div>
 <div class="b3-dialog__action">

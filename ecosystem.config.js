@@ -2,11 +2,11 @@ module.exports = {
     apps: [
         {
             name: 'siyuan-kernel',
-            cwd: '/root/code/NeuraLink-Notes/kernel',
+            cwd: '/root/code/neu-siyuan-note/kernel',
             script: './siyuan-kernel',
-            args: '--mode prod --port 6806 --wd /root/code/NeuraLink-Notes --workspace /root/code/NeuraLink-Notes/workspace',
+            args: '--mode prod --port 6806 --wd /root/code/neu-siyuan-note --workspace /root/code/neu-siyuan-note/workspace',
             env: {
-                SIYUAN_WORKSPACE: '/root/code/NeuraLink-Notes/workspace',
+                SIYUAN_WORKSPACE: '/root/code/neu-siyuan-note/workspace',
                 SIYUAN_PORT: '6806',
                 SIYUAN_WEB_MODE: 'true',
                 SIYUAN_ACCESS_AUTH_CODE_BYPASS: 'true',
@@ -23,8 +23,8 @@ module.exports = {
             autorestart: true,
             watch: false,
             max_memory_restart: '2G',
-            error_file: '/tmp/siyuan-error.log',
-            out_file: '/tmp/siyuan-out.log',
+            error_file: '/root/code/pm2-apps/logs/siyuan-error.log',
+            out_file: '/root/code/pm2-apps/logs/siyuan-out.log',
             log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
             merge_logs: true,
         },

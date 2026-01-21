@@ -787,13 +787,13 @@ export class AI extends Model {
         // 1. 构建系统消息（主要包含当前文档正文）
         let systemContent = "";
         if (docContent && docContent.trim()) {
-            const docMaxLength = 3000; // 降低限制以适配 20k Token 总窗口，确保存量消息不超限
+            const docMaxLength = 50000; // 适配 72k 模型：大幅提升至 50,000 字符，确保长文档完整注入
             systemContent += `【当前活动文档正文】\n${docContent.substring(0, docMaxLength)}${docContent.length > docMaxLength ? "...(正文已截断)" : ""}\n`;
         }
         messages.push({
             role: "system",
-            content: `你是一个智能文档助手。后端已自动为你检索并注入了相关的附件 RAG 上下文或全文总结参考。
-请优先参考注入的【相关片段】或【所有相关附件】内容回答用户问题。
+            content: `你是一个拥有超长上下文窗口的智能文档助手（适配 72k Token 模型）。后端已为你注入了海量的附件 RAG 上下文或长文本总结。
+请充分利用这些详细信息，优先参考注入的【相关片段】或【所有相关附件】内容，对用户问题进行深度、全面的回答，无需担心长度限制。
 ${systemContent}`
         });
 

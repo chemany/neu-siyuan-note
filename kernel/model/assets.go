@@ -768,9 +768,14 @@ func RemoveUnusedAssets() (ret []string) {
 				}
 			}
 
+			// 删除原始文件
 			if err := filelock.Remove(absPath); err != nil {
 				logging.LogErrorf("remove unused asset [%s] failed: %s", absPath, err)
 			}
+			
+			// 删除相关的衍生文件
+			removeRelatedFiles(absPath)
+			
 			util.RemoveAssetText(unusedAsset)
 		}
 		ret = append(ret, absPath)
@@ -808,10 +813,14 @@ func RemoveUnusedAsset(p string) (ret string) {
 		cache.RemoveAssetHash(hash)
 	}
 
+	// 删除原始文件
 	if err = filelock.Remove(absPath); err != nil {
 		logging.LogErrorf("remove unused asset [%s] failed: %s", absPath, err)
 	}
 	ret = absPath
+
+	// 删除相关的 OCR 和向量化文件
+	removeRelatedFiles(absPath)
 
 	util.RemoveAssetText(p)
 
@@ -820,6 +829,39 @@ func RemoveUnusedAsset(p string) (ret string) {
 	indexHistoryDir(filepath.Base(historyDir), util.NewLute())
 	cache.RemoveAsset(p)
 	return
+}
+
+// removeRelatedFiles 删除资源文件相关的衍生文件
+func removeRelatedFiles(assetPath string) {
+	// 删除 OCR JSON 文件
+	ocrJSONPath := assetPath + ".ocr.json"
+	if filelock.IsExist(ocrJSONPath) {
+		if err := filelock.Remove(ocrJSONPath); err != nil {
+			logging.LogWarnf("删除 OCR JSON 文件失败 [%s]: %v", ocrJSONPath, err)
+		} else {
+			logging.LogInfof("已删除 OCR JSON 文件: %s", ocrJSONPath)
+		}
+	}
+
+	// 删除 Markdown 文件
+	mdPath := assetPath + ".md"
+	if filelock.IsExist(mdPath) {
+		if err := filelock.Remove(mdPath); err != nil {
+			logging.LogWarnf("删除 Markdown 文件失败 [%s]: %v", mdPath, err)
+		} else {
+			logging.LogInfof("已删除 Markdown 文件: %s", mdPath)
+		}
+	}
+
+	// 删除向量化文件
+	vectorPath := assetPath + ".vectors.json"
+	if filelock.IsExist(vectorPath) {
+		if err := filelock.Remove(vectorPath); err != nil {
+			logging.LogWarnf("删除向量化文件失败 [%s]: %v", vectorPath, err)
+		} else {
+			logging.LogInfof("已删除向量化文件: %s", vectorPath)
+		}
+	}
 }
 
 func RenameAsset(oldPath, newName string) (newPath string, err error) {
@@ -1056,6 +1098,9 @@ func UnusedAssets() (ret []string) {
 			continue
 		}
 
+		// 处理衍生文件：.vectors.json, .md, .ocr.json
+		// 这些文件是由原始文件（如 PDF）自动生成的
+		// 如果原始文件被引用，这些衍生文件也不应该被清理
 		if strings.HasSuffix(asset, ".vectors.json") {
 			// RAG 向量化数据文件：检查对应的源文件是否被引用
 			// 向量化文件格式: 原文件名.vectors.json
@@ -1065,6 +1110,31 @@ func UnusedAssets() (ret []string) {
 				toRemoves = append(toRemoves, asset)
 			}
 			// 源文件未被引用，向量化文件会随源文件一起被标记为未引用
+			continue
+		}
+
+		if strings.HasSuffix(asset, ".md") {
+			// Markdown 文档：检查是否是 OCR 生成的衍生文件
+			// OCR 生成的 Markdown 格式: 原文件名.pdf.md, 原文件名.png.md 等
+			// 检查去掉 .md 后的文件是否被引用
+			possibleSourceFile := strings.TrimSuffix(asset, ".md")
+			if _, sourceExists := linkDestMap[possibleSourceFile]; sourceExists {
+				// 源文件被引用，排除 Markdown 文件（不删除）
+				toRemoves = append(toRemoves, asset)
+				continue
+			}
+			// 如果不是衍生文件（独立的 .md 文件），继续正常处理
+		}
+
+		if strings.HasSuffix(asset, ".ocr.json") {
+			// OCR JSON 数据文件：检查对应的源文件是否被引用
+			// OCR 文件格式: 原文件名.ocr.json
+			sourceFile := strings.TrimSuffix(asset, ".ocr.json")
+			if _, sourceExists := linkDestMap[sourceFile]; sourceExists {
+				// 源文件被引用，排除 OCR 文件（不删除）
+				toRemoves = append(toRemoves, asset)
+			}
+			// 源文件未被引用，OCR 文件会随源文件一起被标记为未引用
 			continue
 		}
 	}

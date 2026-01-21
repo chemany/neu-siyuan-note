@@ -923,6 +923,11 @@ func IsSubscriber() bool {
 func IsPaidUser() bool {
 	// S3/WebDAV data sync and backup are available for a fee https://github.com/siyuan-note/siyuan/issues/8780
 
+	// Web 模式下允许使用 WebDAV/S3/Local 同步
+	if util.ContainerDocker == util.Container || "true" == os.Getenv("SIYUAN_WEB_MODE") {
+		return true
+	}
+
 	if IsSubscriber() {
 		return true
 	}

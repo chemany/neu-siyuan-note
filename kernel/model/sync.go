@@ -226,14 +226,17 @@ func syncData(exit, byHand bool) {
 
 func checkSync(boot, exit, byHand bool) bool {
 	if 2 == Conf.Sync.Mode && !boot && !exit && !byHand { // 手动模式下只有启动和退出进行同步
+		logging.LogInfof("checkSync: sync mode is 2 (manual), boot=%v, exit=%v, byHand=%v, skipping", boot, exit, byHand)
 		return false
 	}
 
 	if 3 == Conf.Sync.Mode && !byHand { // 完全手动模式下只有手动进行同步
+		logging.LogInfof("checkSync: sync mode is 3 (fully manual), byHand=%v, skipping", byHand)
 		return false
 	}
 
 	if !Conf.Sync.Enabled {
+		logging.LogWarnf("checkSync: sync is not enabled")
 		if byHand {
 			util.PushMsg(Conf.Language(124), 5000)
 		}
@@ -241,6 +244,7 @@ func checkSync(boot, exit, byHand bool) bool {
 	}
 
 	if !cloud.IsValidCloudDirName(Conf.Sync.CloudName) {
+		logging.LogWarnf("checkSync: invalid cloud dir name: %s", Conf.Sync.CloudName)
 		if byHand {
 			util.PushMsg(Conf.Language(123), 5000)
 		}
@@ -250,10 +254,12 @@ func checkSync(boot, exit, byHand bool) bool {
 	switch Conf.Sync.Provider {
 	case conf.ProviderSiYuan:
 		if !IsSubscriber() {
+			logging.LogWarnf("checkSync: not a subscriber for SiYuan provider")
 			return false
 		}
 	case conf.ProviderWebDAV, conf.ProviderS3, conf.ProviderLocal:
 		if !IsPaidUser() {
+			logging.LogWarnf("checkSync: not a paid user for provider %d", Conf.Sync.Provider)
 			return false
 		}
 	}
@@ -264,6 +270,8 @@ func checkSync(boot, exit, byHand bool) bool {
 		planSyncAfter(64 * time.Minute)
 		return false
 	}
+	
+	logging.LogInfof("checkSync: all checks passed, sync can proceed")
 	return true
 }
 

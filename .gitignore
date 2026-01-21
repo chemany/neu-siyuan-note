@@ -181,6 +181,53 @@ SYNC_SIMPLIFICATION_GUIDE.md
 UI_OPTIMIZATION_GUIDE.md
 WEB_MULTIUSER_GUIDE.md
 
+# 排除所有修复和诊断文档
+*_FIX.md
+*_FIX_*.md
+*_SUMMARY.md
+*_GUIDE.md
+*_MANUAL.md
+*_DESIGN.md
+*_COMPLETE.md
+*_IMPLEMENTATION.md
+*_INTEGRATION.md
+504_TIMEOUT_FIX.md
+AI_DOCUMENT_ANALYSIS_FIX.md
+ASSET_CLEANUP_FIX.md
+AUTO_VECTORIZATION_DESIGN.md
+BATCH_VECTORIZE_GUIDE.md
+DATABASE_SWITCH_FIX.md
+FINAL_FIX_SUMMARY.md
+GLOBAL_VECTORIZE_SERVICE_COMPLETE.md
+HIGH_PERFORMANCE_VECTORIZE.md
+INDEX_REBUILD_ISSUE.md
+LOGIN_REDIRECT_FIX.md
+MEETING_NOTES_DIAGNOSIS.md
+OCR_TEST_GUIDE.md
+RERANKER_IMPLEMENTATION.md
+SYNC_FIX_SUMMARY.md
+SYNC_TEST_GUIDE.md
+WEBDAV_CONFIG_FIX.md
+WEBDAV_SYNC_FIX.md
+
+# 排除中文文档
+*.md
+!README.md
+!LICENSE.md
+快速参考.md
+灵枢笔记问题排查总结.md
+修复完成报告.md
+同步功能修复说明.md
+密钥自动重新生成问题修复说明.md
+最终修复方案.md
+解决密钥不匹配问题.md
+设置自己的密钥.sh
+诊断同步配置.sh
+使用旧密钥同步.md
+清空云端重新同步.md
+WEBDAV_问题排查总结.md
+WebDAV同步配置指南.md
+
 # 排除临时脚本
 fix-embedding-config.js
 fix-notepads-final.py
@@ -188,3 +235,29 @@ fix-unified-db.js
 migrate-notepads-to-siyuan.sh
 sync-users-to-unified.js
 verify-external-access.sh
+
+# 排除所有测试脚本
+test-*.sh
+test-*.js
+test-*.go
+*-test.sh
+*-test.js
+check-*.sh
+verify-*.sh
+diagnose-*.sh
+batch-*.sh
+start-*.sh
+rebuild-*.sh
+fix-*.sh
+fix-*.js
+fix-*.py
+监控*.sh
+查看*.sh
+等待*.sh
+实时*.sh
+诊断*.sh
+
+# 排除备份文件
+*.backup
+*.backup.*
+siyuan-kernel.backup.*

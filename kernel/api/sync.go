@@ -458,7 +458,17 @@ func performSync(c *gin.Context) {
 		}
 	}
 
+	// 检查是否使用智能合并模式
+	mergeArg := arg["merge"]
+	if nil != mergeArg && mergeArg.(bool) {
+		// 智能合并模式：自动同步（双向合并）
+		logging.LogInfof("performSync: merge mode triggered, calling SyncData(true)")
+		model.SyncData(true)
+		return
+	}
+
 	if 3 != model.Conf.Sync.Mode {
+		logging.LogInfof("performSync: sync mode is %d, calling SyncData(true)", model.Conf.Sync.Mode)
 		model.SyncData(true)
 		return
 	}
@@ -467,13 +477,16 @@ func performSync(c *gin.Context) {
 	uploadArg := arg["upload"]
 	if nil == uploadArg {
 		// 必须传入同步方向，未传的话不执行同步
+		logging.LogWarnf("performSync: no upload or merge parameter provided, skipping sync")
 		return
 	}
 
 	upload := uploadArg.(bool)
 	if upload {
+		logging.LogInfof("performSync: upload mode, calling SyncDataUpload()")
 		model.SyncDataUpload()
 	} else {
+		logging.LogInfof("performSync: download mode, calling SyncDataDownload()")
 		model.SyncDataDownload()
 	}
 }
