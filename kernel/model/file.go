@@ -448,6 +448,12 @@ func ListDocTree(ctx *WorkspaceContext, boxID, listPath string, sortMode int, fl
 
 func GetDoc(startID, endID, id string, index int, query string, queryTypes map[string]bool, queryMethod, mode int, size int, isBacklink bool, originalRefBlockIDs map[string]string, highlight bool) (
 	blockCount int, dom, parentID, parent2ID, rootID, typ string, eof, scroll bool, boxID, docPath string, isBacklinkExpand bool, keywords []string, err error) {
+	return GetDocWithContext(GetDefaultWorkspaceContext(), startID, endID, id, index, query, queryTypes, queryMethod, mode, size, isBacklink, originalRefBlockIDs, highlight)
+}
+
+// GetDocWithContext 使用 WorkspaceContext 获取文档内容
+func GetDocWithContext(ctx *WorkspaceContext, startID, endID, id string, index int, query string, queryTypes map[string]bool, queryMethod, mode int, size int, isBacklink bool, originalRefBlockIDs map[string]string, highlight bool) (
+	blockCount int, dom, parentID, parent2ID, rootID, typ string, eof, scroll bool, boxID, docPath string, isBacklinkExpand bool, keywords []string, err error) {
 	//os.MkdirAll("pprof", 0755)
 	//cpuProfile, _ := os.Create("pprof/GetDoc")
 	//pprof.StartCPUProfile(cpuProfile)
@@ -456,7 +462,7 @@ func GetDoc(startID, endID, id string, index int, query string, queryTypes map[s
 	FlushTxQueue() // 写入数据时阻塞，避免获取到的数据不一致
 
 	inputIndex := index
-	tree, err := LoadTreeByBlockID(id)
+	tree, err := LoadTreeByBlockIDWithContext(ctx, id)
 	if err != nil {
 		if ErrBlockNotFound == err {
 			if 0 == mode {

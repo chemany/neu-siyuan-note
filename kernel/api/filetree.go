@@ -1171,8 +1171,11 @@ func getDoc(c *gin.Context) {
 		highlight = highlightArg.(bool)
 	}
 
+	// 从 Gin Context 获取 WorkspaceContext
+	ctx := model.GetWorkspaceContext(c)
+
 	blockCount, content, parentID, parent2ID, rootID, typ, eof, scroll, boxID, docPath, isBacklinkExpand, keywords, err :=
-		model.GetDoc(startID, endID, id, index, query, queryTypes, queryMethod, mode, size, isBacklink, originalRefBlockIDs, highlight)
+		model.GetDocWithContext(ctx, startID, endID, id, index, query, queryTypes, queryMethod, mode, size, isBacklink, originalRefBlockIDs, highlight)
 	if model.ErrBlockNotFound == err {
 		ret.Code = 3
 		return

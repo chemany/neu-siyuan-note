@@ -238,9 +238,44 @@ func LoadTreeByBlockID(id string) (ret *parse.Tree, err error) {
 	return
 }
 
+// LoadTreeByBlockIDWithContext 使用 WorkspaceContext 加载树
+func LoadTreeByBlockIDWithContext(ctx *WorkspaceContext, id string) (ret *parse.Tree, err error) {
+	if !ast.IsNodeIDPattern(id) {
+		stack := logging.ShortStack()
+		logging.LogErrorf("block id is invalid [id=%s], stack: [%s]", id, stack)
+		return nil, ErrTreeNotFound
+	}
+
+	bt := treenode.GetBlockTree(id)
+	if nil == bt {
+		if task.ContainIndexTask() {
+			err = ErrIndexing
+			return
+		}
+
+		stack := logging.ShortStack()
+		if !strings.Contains(stack, "BuildBlockBreadcrumb") {
+			if "dev" == util.Mode {
+				logging.LogWarnf("block tree not found [id=%s], stack: [%s]", id, stack)
+			}
+		}
+		return nil, ErrTreeNotFound
+	}
+
+	ret, err = loadTreeByBlockTreeWithContext(ctx, bt)
+	return
+}
+
 func loadTreeByBlockTree(bt *treenode.BlockTree) (ret *parse.Tree, err error) {
 	luteEngine := util.NewLute()
 	ret, err = filesys.LoadTree(bt.BoxID, bt.Path, luteEngine)
+	return
+}
+
+// loadTreeByBlockTreeWithContext 使用 WorkspaceContext 加载树
+func loadTreeByBlockTreeWithContext(ctx *WorkspaceContext, bt *treenode.BlockTree) (ret *parse.Tree, err error) {
+	luteEngine := util.NewLute()
+	ret, err = filesys.LoadTreeWithDataDir(ctx.GetDataDir(), bt.BoxID, bt.Path, luteEngine)
 	return
 }
 

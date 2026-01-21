@@ -124,6 +124,19 @@ func LoadTree(boxID, p string, luteEngine *lute.Lute) (ret *parse.Tree, err erro
 	return
 }
 
+// LoadTreeWithDataDir 使用指定的 dataDir 加载树
+func LoadTreeWithDataDir(dataDir, boxID, p string, luteEngine *lute.Lute) (ret *parse.Tree, err error) {
+	filePath := filepath.Join(dataDir, boxID, p)
+	data, err := filelock.ReadFile(filePath)
+	if err != nil {
+		logging.LogErrorf("load tree [%s] failed: %s", p, err)
+		return
+	}
+
+	ret, err = LoadTreeByData(data, boxID, p, luteEngine)
+	return
+}
+
 func LoadTreeByData(data []byte, boxID, p string, luteEngine *lute.Lute) (ret *parse.Tree, err error) {
 	ret = parseJSON2Tree(boxID, p, data, luteEngine)
 	if nil == ret {
