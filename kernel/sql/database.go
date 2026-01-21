@@ -1039,6 +1039,60 @@ func deleteBlocksByIDs(tx *sql.Tx, ids []string) (err error) {
 	return
 }
 
+// deleteBlocksByIDsWithContext 使用 WorkspaceContext 删除块（带缓存清理）
+func deleteBlocksByIDsWithContext(ctx WorkspaceContext, tx *sql.Tx, ids []string) (err error) {
+	if 1 > len(ids) {
+		return
+	}
+
+	var ftsIDs []string
+	for _, id := range ids {
+		// 清理用户缓存
+		removeBlockCacheWithContext(ctx, id)
+		ftsIDs = append(ftsIDs, "\""+id+"\"")
+	}
+
+	var rowIDs []string
+	stmt := "SELECT ROWID FROM blocks WHERE id IN (" + strings.Join(ftsIDs, ",") + ")"
+	rows, err := tx.Query(stmt)
+	if err != nil {
+		logging.LogErrorf("query block rowIDs failed: %s", err)
+		return
+	}
+	for rows.Next() {
+		var rowID int64
+		if err = rows.Scan(&rowID); err != nil {
+			logging.LogErrorf("scan block rowID failed: %s", err)
+			rows.Close()
+			return
+		}
+		rowIDs = append(rowIDs, strconv.FormatInt(rowID, 10))
+	}
+	rows.Close()
+
+	if 1 > len(rowIDs) {
+		return
+	}
+
+	stmt = "DELETE FROM blocks WHERE ROWID IN (" + strings.Join(rowIDs, ",") + ")"
+	if err = execStmtTx(tx, stmt); err != nil {
+		return
+	}
+
+	stmt = "DELETE FROM blocks_fts WHERE ROWID IN (" + strings.Join(rowIDs, ",") + ")"
+	if err = execStmtTx(tx, stmt); err != nil {
+		return
+	}
+
+	if !caseSensitive {
+		stmt = "DELETE FROM blocks_fts_case_insensitive WHERE ROWID IN (" + strings.Join(rowIDs, ",") + ")"
+		if err = execStmtTx(tx, stmt); err != nil {
+			return
+		}
+	}
+	return
+}
+
 func deleteBlocksByBoxTx(tx *sql.Tx, box string) (err error) {
 	stmt := "DELETE FROM blocks WHERE box = ?"
 	if err = execStmtTx(tx, stmt, box); err != nil {

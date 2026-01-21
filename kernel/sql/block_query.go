@@ -106,9 +106,36 @@ func queryBlockChildrenIDs(id string) (ret []string) {
 	return
 }
 
+// queryBlockChildrenIDsWithContext 使用 WorkspaceContext 查询子块ID
+func queryBlockChildrenIDsWithContext(ctx WorkspaceContext, id string) (ret []string) {
+	ret = append(ret, id)
+	childIDs := queryBlockIDByParentIDWithContext(ctx, id)
+	for _, childID := range childIDs {
+		ret = append(ret, queryBlockChildrenIDsWithContext(ctx, childID)...)
+	}
+	return
+}
+
 func queryBlockIDByParentID(parentID string) (ret []string) {
 	sqlStmt := "SELECT id FROM blocks WHERE parent_id = ?"
 	rows, err := query(sqlStmt, parentID)
+	if err != nil {
+		logging.LogErrorf("sql query [%s] failed: %s", sqlStmt, err)
+		return
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id string
+		rows.Scan(&id)
+		ret = append(ret, id)
+	}
+	return
+}
+
+// queryBlockIDByParentIDWithContext 使用 WorkspaceContext 查询子块ID
+func queryBlockIDByParentIDWithContext(ctx WorkspaceContext, parentID string) (ret []string) {
+	sqlStmt := "SELECT id FROM blocks WHERE parent_id = ?"
+	rows, err := queryWithContext(ctx, sqlStmt, parentID)
 	if err != nil {
 		logging.LogErrorf("sql query [%s] failed: %s", sqlStmt, err)
 		return
@@ -950,13 +977,23 @@ func GetBlocksByBox(boxID string) (ret []*Block, err error) {
 
 // GetBlockWithContext 使用 WorkspaceContext 获取块
 func GetBlockWithContext(ctx WorkspaceContext, id string) (ret *Block) {
-	// 注意: 缓存暂时不支持多用户隔离,这里直接查询数据库
-	// TODO: 实现按用户隔离的缓存
+	// 先尝试从用户缓存获取
+	ret = getBlockCacheWithContext(ctx, id)
+	if nil != ret {
+		return
+	}
+	
+	// 缓存未命中，从数据库查询
 	row := queryRowWithContext(ctx, "SELECT * FROM blocks WHERE id = ?", id)
 	if nil == row {
 		return
 	}
 	ret = scanBlockRow(row)
+	
+	// 存入用户缓存
+	if nil != ret {
+		putBlockCacheWithContext(ctx, ret)
+	}
 	return
 }
 
@@ -972,6 +1009,8 @@ func GetBlocksByBoxWithContext(ctx WorkspaceContext, boxID string) (ret []*Block
 
 	for rows.Next() {
 		if block := scanBlockRows(rows); nil != block {
+			// 存入用户缓存
+			putBlockCacheWithContext(ctx, block)
 			ret = append(ret, block)
 		}
 	}

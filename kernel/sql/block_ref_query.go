@@ -435,6 +435,32 @@ func QueryRefsByDefID(defBlockID string, containChildren bool) (ret []*Ref) {
 	return
 }
 
+// QueryRefsByDefIDWithContext 使用 WorkspaceContext 查询引用
+func QueryRefsByDefIDWithContext(ctx WorkspaceContext, defBlockID string, containChildren bool) (ret []*Ref) {
+	var rows *sql.Rows
+	var err error
+	if containChildren {
+		blockIDs := queryBlockChildrenIDsWithContext(ctx, defBlockID)
+		var params []string
+		for _, id := range blockIDs {
+			params = append(params, "\""+id+"\"")
+		}
+		rows, err = queryWithContext(ctx, "SELECT * FROM refs WHERE def_block_id IN ("+strings.Join(params, ",")+")")
+	} else {
+		rows, err = queryWithContext(ctx, "SELECT * FROM refs WHERE def_block_id = ?", defBlockID)
+	}
+	if err != nil {
+		logging.LogErrorf("sql query failed: %s", err)
+		return
+	}
+	defer rows.Close()
+	for rows.Next() {
+		ref := scanRefRows(rows)
+		ret = append(ret, ref)
+	}
+	return
+}
+
 func QueryRefsByDefIDRefID(defBlockID, refBlockID string) (ret []*Ref) {
 	stmt := "SELECT * FROM refs WHERE def_block_id = ? AND block_id = ?"
 	rows, err := query(stmt, defBlockID, refBlockID)
