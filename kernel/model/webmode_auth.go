@@ -20,16 +20,11 @@ import (
 	"net/http"
 	"os"
 	"strings"
-	"sync"
 
 	"github.com/gin-gonic/gin"
 	"github.com/siyuan-note/logging"
 	"github.com/siyuan-note/siyuan/kernel/util"
 )
-
-// 全局互斥锁，用于保护 workspace 切换
-// 确保同一时间只有一个请求在处理，避免多用户并发访问时的数据混乱
-var workspaceMutex sync.Mutex
 
 // CheckWebAuth Web模式JWT认证中间件
 // 在Web模式下,所有请求必须携带有效的JWT token
@@ -209,45 +204,12 @@ func CheckWebAuth(c *gin.Context) {
 
 	logging.LogInfof("[Web Mode] Authenticated user: %s (workspace: %s)", user.Username, user.Workspace)
 
-	// 创建 WorkspaceContext 并存储到 context（新架构）
+	// 创建 WorkspaceContext 并存储到 context
+	// 所有数据访问都通过 WorkspaceContext 进行，实现真正的多用户并发
 	workspaceCtx := NewWorkspaceContextWithUser(user.Workspace, user.ID, user.Username)
 	SetWorkspaceContext(c, workspaceCtx)
 
-	// 切换到用户的 workspace（使用互斥锁保护）
-	// 注意：这是临时方案，最终会被移除
-	// TODO: 阶段 5 - 移除 workspace 切换逻辑
-	workspaceMutex.Lock()
-	
-	// 保存原始 workspace
-	originalWorkspace := util.WorkspaceDir
-	
-	// 使用 defer 确保在请求结束时恢复 workspace 并解锁
-	defer func() {
-		if user.Workspace != originalWorkspace {
-			logging.LogInfof("[Web Mode] Restoring workspace: %s -> %s", user.Workspace, originalWorkspace)
-			util.WorkspaceDir = originalWorkspace
-			util.WorkspaceName = ""
-			util.ConfDir = originalWorkspace + "/conf"
-			util.DataDir = originalWorkspace + "/data"  // 恢复时使用 /data 子目录
-			util.RepoDir = originalWorkspace + "/repo"
-			util.HistoryDir = originalWorkspace + "/history"
-			util.TempDir = originalWorkspace + "/temp"
-		}
-		workspaceMutex.Unlock()
-	}()
-	
-	// 切换到用户 workspace
-	if user.Workspace != originalWorkspace {
-		logging.LogInfof("[Web Mode] Switching workspace: %s -> %s", originalWorkspace, user.Workspace)
-		util.WorkspaceDir = user.Workspace
-		util.WorkspaceName = user.Username
-		util.ConfDir = user.Workspace + "/conf"
-		// 注意：用户的笔记本直接在 workspace 根目录下（旧版本结构），而不是在 data/ 子目录中
-		util.DataDir = user.Workspace  // 指向 workspace 根目录
-		util.RepoDir = user.Workspace + "/repo"
-		util.HistoryDir = user.Workspace + "/history"
-		util.TempDir = user.Workspace + "/temp"
-	}
+	logging.LogInfof("[Web Mode] WorkspaceContext created for user: %s", user.Username)
 
 	c.Next()
 }
