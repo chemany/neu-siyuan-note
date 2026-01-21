@@ -1114,6 +1114,12 @@ func GetBlock(id string, tree *parse.Tree) (ret *Block, err error) {
 	return
 }
 
+// GetBlockWithContext 使用 WorkspaceContext 获取块信息
+func GetBlockWithContext(ctx *WorkspaceContext, id string, tree *parse.Tree) (ret *Block, err error) {
+	ret, err = getBlockWithContext(ctx, id, tree)
+	return
+}
+
 func getBlock(id string, tree *parse.Tree) (ret *Block, err error) {
 	if "" == id {
 		return
@@ -1124,6 +1130,37 @@ func getBlock(id string, tree *parse.Tree) (ret *Block, err error) {
 		if err != nil {
 			time.Sleep(1 * time.Second)
 			tree, err = LoadTreeByBlockID(id)
+			if err != nil {
+				return
+			}
+		}
+	}
+
+	node := treenode.GetNodeInTree(tree, id)
+	if nil == node {
+		err = ErrBlockNotFound
+		return
+	}
+
+	sqlBlock := sql.BuildBlockFromNode(node, tree)
+	if nil == sqlBlock {
+		return
+	}
+	ret = fromSQLBlock(sqlBlock, "", 0)
+	return
+}
+
+// getBlockWithContext 使用 WorkspaceContext 获取块信息（内部实现）
+func getBlockWithContext(ctx *WorkspaceContext, id string, tree *parse.Tree) (ret *Block, err error) {
+	if "" == id {
+		return
+	}
+
+	if nil == tree {
+		tree, err = LoadTreeByBlockIDWithContext(ctx, id)
+		if err != nil {
+			time.Sleep(1 * time.Second)
+			tree, err = LoadTreeByBlockIDWithContext(ctx, id)
 			if err != nil {
 				return
 			}

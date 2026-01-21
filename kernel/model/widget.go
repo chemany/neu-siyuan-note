@@ -64,3 +64,43 @@ func SearchWidget(keyword string) (ret []*Block) {
 
 	return
 }
+
+// SearchWidgetWithContext 使用 WorkspaceContext 搜索小部件
+func SearchWidgetWithContext(ctx *WorkspaceContext, keyword string) (ret []*Block) {
+	ret = []*Block{}
+	widgetsDir := filepath.Join(ctx.GetDataDir(), "widgets")
+	entries, err := os.ReadDir(widgetsDir)
+	if err != nil {
+		logging.LogErrorf("read dir [%s] failed: %s", widgetsDir, err)
+		return
+	}
+
+	k := strings.ToLower(keyword)
+	var widgets []*bazaar.Widget
+	for _, entry := range entries {
+		if !util.IsDirRegularOrSymlink(entry) {
+			continue
+		}
+		if strings.HasPrefix(entry.Name(), ".") {
+			continue
+		}
+
+		widget, _ := bazaar.WidgetJSON(entry.Name())
+		if nil == widget {
+			continue
+		}
+
+		widgets = append(widgets, widget)
+	}
+
+	widgets = filterWidgets(widgets, k)
+	for _, widget := range widgets {
+		b := &Block{
+			Name:    bazaar.GetPreferredName(widget.Package),
+			Content: widget.Name,
+		}
+		ret = append(ret, b)
+	}
+
+	return
+}

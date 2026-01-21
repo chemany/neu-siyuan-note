@@ -2285,3 +2285,75 @@ func replaceCaseInsensitive(input, old, new []byte) []byte {
 	re := regexp.MustCompile("(?i)" + regexp.QuoteMeta(string(old)))
 	return []byte(re.ReplaceAllString(string(input), string(new)))
 }
+
+// ==================== 带 WorkspaceContext 的搜索函数 ====================
+
+// ListInvalidBlockRefsWithContext 使用 WorkspaceContext 列出无效的块引用
+func ListInvalidBlockRefsWithContext(ctx *WorkspaceContext, page, pageSize int) (ret []*Block, matchedBlockCount, matchedRootCount, pageCount int) {
+	// 暂时保存原始的 util.DataDir
+	originalDataDir := util.DataDir
+	defer func() {
+		util.DataDir = originalDataDir
+	}()
+	
+	// 临时设置为用户的 DataDir
+	util.DataDir = ctx.GetDataDir()
+	
+	return ListInvalidBlockRefs(page, pageSize)
+}
+
+// FullTextSearchBlockWithContext 使用 WorkspaceContext 进行全文搜索
+func FullTextSearchBlockWithContext(ctx *WorkspaceContext, query string, boxes, paths []string, types map[string]bool, method, orderBy, groupBy, page, pageSize int) (ret []*Block, matchedBlockCount, matchedRootCount, pageCount int, docMode bool) {
+	// 暂时保存原始的 util.DataDir
+	originalDataDir := util.DataDir
+	defer func() {
+		util.DataDir = originalDataDir
+	}()
+	
+	// 临时设置为用户的 DataDir
+	util.DataDir = ctx.GetDataDir()
+	
+	return FullTextSearchBlock(query, boxes, paths, types, method, orderBy, groupBy, page, pageSize)
+}
+
+// SearchRefBlockWithContext 使用 WorkspaceContext 搜索引用块
+func SearchRefBlockWithContext(ctx *WorkspaceContext, id, rootID, keyword string, beforeLen int, isSquareBrackets, isDatabase bool) (ret []*Block, newDoc bool) {
+	// 暂时保存原始的 util.DataDir
+	originalDataDir := util.DataDir
+	defer func() {
+		util.DataDir = originalDataDir
+	}()
+	
+	// 临时设置为用户的 DataDir
+	util.DataDir = ctx.GetDataDir()
+	
+	return SearchRefBlock(id, rootID, keyword, beforeLen, isSquareBrackets, isDatabase)
+}
+
+// SearchEmbedBlockWithContext 使用 WorkspaceContext 搜索嵌入块
+func SearchEmbedBlockWithContext(ctx *WorkspaceContext, embedBlockID, stmt string, excludeIDs []string, headingMode int, breadcrumb bool) (ret []*EmbedBlock) {
+	// 暂时保存原始的 util.DataDir
+	originalDataDir := util.DataDir
+	defer func() {
+		util.DataDir = originalDataDir
+	}()
+	
+	// 临时设置为用户的 DataDir
+	util.DataDir = ctx.GetDataDir()
+	
+	return SearchEmbedBlock(embedBlockID, stmt, excludeIDs, headingMode, breadcrumb)
+}
+
+// FindReplaceWithContext 使用 WorkspaceContext 进行查找替换
+func FindReplaceWithContext(ctx *WorkspaceContext, keyword, replacement string, replaceTypes map[string]bool, ids []string, paths, boxes []string, types map[string]bool, method, orderBy, groupBy int) (err error) {
+	// 暂时保存原始的 util.DataDir
+	originalDataDir := util.DataDir
+	defer func() {
+		util.DataDir = originalDataDir
+	}()
+	
+	// 临时设置为用户的 DataDir
+	util.DataDir = ctx.GetDataDir()
+	
+	return FindReplace(keyword, replacement, replaceTypes, ids, paths, boxes, types, method, orderBy, groupBy)
+}

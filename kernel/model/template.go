@@ -525,3 +525,17 @@ func addBlockIALNodes(tree *parse.Tree, removeUpdated bool) {
 		block.InsertAfter(&ast.Node{Type: ast.NodeKramdownBlockIAL, Tokens: parse.IAL2Tokens(block.KramdownIAL)})
 	}
 }
+
+// SearchTemplateWithContext 使用 WorkspaceContext 搜索模板
+func SearchTemplateWithContext(ctx *WorkspaceContext, keyword string) (ret []*Block) {
+	// 暂时保存原始的 util.DataDir
+	originalDataDir := util.DataDir
+	defer func() {
+		util.DataDir = originalDataDir
+	}()
+	
+	// 临时设置为用户的 DataDir
+	util.DataDir = ctx.GetDataDir()
+	
+	return SearchTemplate(keyword)
+}

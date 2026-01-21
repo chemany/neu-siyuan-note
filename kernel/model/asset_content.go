@@ -947,3 +947,17 @@ func (parser *EpubAssetParser) Parse(absPath string) (ret *AssetParseResult) {
 	}
 	return
 }
+
+// FullTextSearchAssetContentWithContext 使用 WorkspaceContext 全文搜索资产内容
+func FullTextSearchAssetContentWithContext(ctx *WorkspaceContext, query string, types map[string]bool, method, orderBy, page, pageSize int) (ret []*AssetContent, matchedAssetCount, pageCount int) {
+	// 暂时保存原始的 util.DataDir
+	originalDataDir := util.DataDir
+	defer func() {
+		util.DataDir = originalDataDir
+	}()
+	
+	// 临时设置为用户的 DataDir
+	util.DataDir = ctx.GetDataDir()
+	
+	return FullTextSearchAssetContent(query, types, method, orderBy, page, pageSize)
+}

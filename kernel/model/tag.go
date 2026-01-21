@@ -419,3 +419,17 @@ func buildTags(root Tags, labels []string, depth int) Tags {
 	root[i].tags = buildTags(root[i].tags, labels[1:], depth)
 	return root
 }
+
+// SearchTagsWithContext 使用 WorkspaceContext 搜索标签
+func SearchTagsWithContext(ctx *WorkspaceContext, keyword string) (ret []string) {
+	// 暂时保存原始的 util.DataDir
+	originalDataDir := util.DataDir
+	defer func() {
+		util.DataDir = originalDataDir
+	}()
+	
+	// 临时设置为用户的 DataDir
+	util.DataDir = ctx.GetDataDir()
+	
+	return SearchTags(keyword)
+}

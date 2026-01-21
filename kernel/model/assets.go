@@ -1721,3 +1721,17 @@ func copyAssetsToDataAssets(rootPath string) {
 		}
 	}
 }
+
+// SearchAssetsByNameWithContext 使用 WorkspaceContext 按名称搜索资产
+func SearchAssetsByNameWithContext(ctx *WorkspaceContext, keyword string, exts []string) (ret []*cache.Asset) {
+	// 暂时保存原始的 util.DataDir
+	originalDataDir := util.DataDir
+	defer func() {
+		util.DataDir = originalDataDir
+	}()
+	
+	// 临时设置为用户的 DataDir
+	util.DataDir = ctx.GetDataDir()
+	
+	return SearchAssetsByName(keyword, exts)
+}

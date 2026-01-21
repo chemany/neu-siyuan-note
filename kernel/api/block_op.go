@@ -666,7 +666,10 @@ func updateBlock(c *gin.Context) {
 		return
 	}
 
-	block, err := model.GetBlock(id, nil)
+	// 获取 WorkspaceContext
+	ctx := model.GetWorkspaceContext(c)
+	
+	block, err := model.GetBlockWithContext(ctx, id, nil)
 	if err != nil {
 		ret.Code = -1
 		ret.Msg = "get block failed: " + err.Error()
@@ -675,7 +678,7 @@ func updateBlock(c *gin.Context) {
 
 	var transactions []*model.Transaction
 	if "NodeDocument" == block.Type {
-		oldTree, err := filesys.LoadTree(block.Box, block.Path, luteEngine)
+		oldTree, err := filesys.LoadTreeWithDataDir(ctx.GetDataDir(), block.Box, block.Path, luteEngine)
 		if err != nil {
 			ret.Code = -1
 			ret.Msg = "load tree failed: " + err.Error()
@@ -719,7 +722,7 @@ func updateBlock(c *gin.Context) {
 		}
 	}
 
-	model.PerformTransactions(&transactions)
+	model.PerformTransactionsWithContext(ctx, &transactions)
 	model.FlushTxQueue()
 
 	ret.Data = transactions
@@ -811,6 +814,9 @@ func batchUpdateBlock(c *gin.Context) {
 		Tree     *parse.Tree
 	}
 
+	// 获取 WorkspaceContext
+	ctx := model.GetWorkspaceContext(c)
+
 	var blocks []*updateBlockArg
 	luteEngine := util.NewLute()
 	for _, blockArg := range blocksArg {
@@ -838,7 +844,7 @@ func batchUpdateBlock(c *gin.Context) {
 			return
 		}
 
-		block, err := model.GetBlock(id, nil)
+		block, err := model.GetBlockWithContext(ctx, id, nil)
 		if err != nil {
 			ret.Code = -1
 			ret.Msg = "get block failed: " + err.Error()
@@ -863,7 +869,7 @@ func batchUpdateBlock(c *gin.Context) {
 		tree := upBlock.Tree
 		id := upBlock.ID
 		if "NodeDocument" == block.Type {
-			oldTree, err := filesys.LoadTree(block.Box, block.Path, luteEngine)
+			oldTree, err := filesys.LoadTreeWithDataDir(ctx.GetDataDir(), block.Box, block.Path, luteEngine)
 			if err != nil {
 				ret.Code = -1
 				ret.Msg = "load tree failed: " + err.Error()
@@ -900,7 +906,7 @@ func batchUpdateBlock(c *gin.Context) {
 	}
 
 	tx.DoOperations = ops
-	model.PerformTransactions(&transactions)
+	model.PerformTransactionsWithContext(ctx, &transactions)
 	model.FlushTxQueue()
 
 	ret.Data = transactions
@@ -933,7 +939,9 @@ func deleteBlock(c *gin.Context) {
 		},
 	}
 
-	model.PerformTransactions(&transactions)
+	// 获取 WorkspaceContext 并使用带 Context 的版本
+	ctx := model.GetWorkspaceContext(c)
+	model.PerformTransactionsWithContext(ctx, &transactions)
 
 	ret.Data = transactions
 	broadcastTransactions(transactions)

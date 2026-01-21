@@ -51,7 +51,8 @@ func listInvalidBlockRefs(c *gin.Context) {
 		pageSize = 32
 	}
 
-	blocks, matchedBlockCount, matchedRootCount, pageCount := model.ListInvalidBlockRefs(page, pageSize)
+	ctx := model.GetWorkspaceContext(c)
+	blocks, matchedBlockCount, matchedRootCount, pageCount := model.ListInvalidBlockRefsWithContext(ctx, page, pageSize)
 	ret.Data = map[string]interface{}{
 		"blocks":            blocks,
 		"matchedBlockCount": matchedBlockCount,
@@ -88,8 +89,9 @@ func fullTextSearchAssetContent(c *gin.Context) {
 		return
 	}
 
+	ctx := model.GetWorkspaceContext(c)
 	page, pageSize, query, types, method, orderBy := parseSearchAssetContentArgs(arg)
-	assetContents, matchedAssetCount, pageCount := model.FullTextSearchAssetContent(query, types, method, orderBy, page, pageSize)
+	assetContents, matchedAssetCount, pageCount := model.FullTextSearchAssetContentWithContext(ctx, query, types, method, orderBy, page, pageSize)
 	ret.Data = map[string]interface{}{
 		"assetContents":     assetContents,
 		"matchedAssetCount": matchedAssetCount,
@@ -106,6 +108,7 @@ func findReplace(c *gin.Context) {
 		return
 	}
 
+	ctx := model.GetWorkspaceContext(c)
 	_, _, _, paths, boxes, types, method, orderBy, groupBy := parseSearchBlockArgs(arg)
 
 	k := arg["k"].(string)
@@ -126,7 +129,7 @@ func findReplace(c *gin.Context) {
 		}
 	}
 
-	err := model.FindReplace(k, r, replaceTypes, ids, paths, boxes, types, method, orderBy, groupBy)
+	err := model.FindReplaceWithContext(ctx, k, r, replaceTypes, ids, paths, boxes, types, method, orderBy, groupBy)
 	if err != nil {
 		ret.Code = 1
 		ret.Msg = err.Error()
@@ -145,6 +148,7 @@ func searchAsset(c *gin.Context) {
 		return
 	}
 
+	ctx := model.GetWorkspaceContext(c)
 	k := arg["k"].(string)
 
 	var exts []string
@@ -154,7 +158,7 @@ func searchAsset(c *gin.Context) {
 		}
 	}
 
-	ret.Data = model.SearchAssetsByName(k, exts)
+	ret.Data = model.SearchAssetsByNameWithContext(ctx, k, exts)
 	return
 }
 
@@ -167,8 +171,9 @@ func searchTag(c *gin.Context) {
 		return
 	}
 
+	ctx := model.GetWorkspaceContext(c)
 	k := arg["k"].(string)
-	tags := model.SearchTags(k)
+	tags := model.SearchTagsWithContext(ctx, k)
 	if 1 > len(tags) {
 		tags = []string{}
 	}
@@ -187,8 +192,9 @@ func searchWidget(c *gin.Context) {
 		return
 	}
 
+	ctx := model.GetWorkspaceContext(c)
 	keyword := arg["k"].(string)
-	blocks := model.SearchWidget(keyword)
+	blocks := model.SearchWidgetWithContext(ctx, keyword)
 	ret.Data = map[string]interface{}{
 		"blocks": blocks,
 		"k":      keyword,
@@ -222,8 +228,9 @@ func searchTemplate(c *gin.Context) {
 		return
 	}
 
+	ctx := model.GetWorkspaceContext(c)
 	keyword := arg["k"].(string)
-	blocks := model.SearchTemplate(keyword)
+	blocks := model.SearchTemplateWithContext(ctx, keyword)
 	ret.Data = map[string]interface{}{
 		"blocks": blocks,
 		"k":      keyword,
@@ -292,6 +299,7 @@ func searchEmbedBlock(c *gin.Context) {
 		return
 	}
 
+	ctx := model.GetWorkspaceContext(c)
 	embedBlockID := arg["embedBlockID"].(string)
 	stmt := arg["stmt"].(string)
 	excludeIDsArg := arg["excludeIDs"].([]interface{})
@@ -310,7 +318,7 @@ func searchEmbedBlock(c *gin.Context) {
 		breadcrumb = breadcrumbArg.(bool)
 	}
 
-	blocks := model.SearchEmbedBlock(embedBlockID, stmt, excludeIDs, headingMode, breadcrumb)
+	blocks := model.SearchEmbedBlockWithContext(ctx, embedBlockID, stmt, excludeIDs, headingMode, breadcrumb)
 	ret.Data = map[string]interface{}{
 		"blocks": blocks,
 	}
@@ -341,11 +349,12 @@ func searchRefBlock(c *gin.Context) {
 		isDatabase = isDatabaseArg.(bool)
 	}
 
+	ctx := model.GetWorkspaceContext(c)
 	rootID := arg["rootID"].(string)
 	id := arg["id"].(string)
 	keyword := arg["k"].(string)
 	beforeLen := int(arg["beforeLen"].(float64))
-	blocks, newDoc := model.SearchRefBlock(id, rootID, keyword, beforeLen, isSquareBrackets, isDatabase)
+	blocks, newDoc := model.SearchRefBlockWithContext(ctx, id, rootID, keyword, beforeLen, isSquareBrackets, isDatabase)
 	ret.Data = map[string]interface{}{
 		"blocks": blocks,
 		"newDoc": newDoc,
@@ -363,8 +372,9 @@ func fullTextSearchBlock(c *gin.Context) {
 		return
 	}
 
+	ctx := model.GetWorkspaceContext(c)
 	page, pageSize, query, paths, boxes, types, method, orderBy, groupBy := parseSearchBlockArgs(arg)
-	blocks, matchedBlockCount, matchedRootCount, pageCount, docMode := model.FullTextSearchBlock(query, boxes, paths, types, method, orderBy, groupBy, page, pageSize)
+	blocks, matchedBlockCount, matchedRootCount, pageCount, docMode := model.FullTextSearchBlockWithContext(ctx, query, boxes, paths, types, method, orderBy, groupBy, page, pageSize)
 	ret.Data = map[string]interface{}{
 		"blocks":            blocks,
 		"matchedBlockCount": matchedBlockCount,
