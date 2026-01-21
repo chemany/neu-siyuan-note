@@ -228,9 +228,14 @@ func openNotebook(c *gin.Context) {
 		return
 	}
 
+	// 获取 WorkspaceContext
+	ctx := model.GetWorkspaceContext(c)
+
 	msgId := util.PushMsg(model.Conf.Language(45), 1000*60*15)
 	defer util.PushClearMsg(msgId)
-	existed, err := model.Mount(notebook)
+	
+	// 使用带 Context 的版本
+	existed, err := model.MountWithContext(ctx, notebook)
 	if err != nil {
 		ret.Code = -1
 		ret.Msg = err.Error()
@@ -295,7 +300,10 @@ func closeNotebook(c *gin.Context) {
 	if util.InvalidIDPattern(notebook, ret) {
 		return
 	}
-	model.Unmount(notebook)
+	
+	// 使用 WorkspaceContext
+	ctx := model.GetWorkspaceContext(c)
+	model.UnmountWithContext(ctx, notebook)
 }
 
 func getNotebookConf(c *gin.Context) {

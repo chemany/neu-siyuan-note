@@ -815,6 +815,16 @@ func (conf *AppConf) Box(boxID string) *Box {
 	return nil
 }
 
+// BoxWithContext 使用 WorkspaceContext 获取已打开的笔记本
+func (conf *AppConf) BoxWithContext(ctx *WorkspaceContext, boxID string) *Box {
+	for _, box := range conf.GetOpenedBoxesWithContext(ctx) {
+		if box.ID == boxID {
+			return box
+		}
+	}
+	return nil
+}
+
 func (conf *AppConf) GetBox(boxID string) *Box {
 	for _, box := range conf.GetBoxes() {
 		if box.ID == boxID {
@@ -859,6 +869,22 @@ func (conf *AppConf) GetBoxes() (ret []*Box) {
 func (conf *AppConf) GetOpenedBoxes() (ret []*Box) {
 	ret = []*Box{}
 	notebooks, err := ListNotebooks(GetDefaultWorkspaceContext())
+	if err != nil {
+		return
+	}
+
+	for _, notebook := range notebooks {
+		if !notebook.Closed {
+			ret = append(ret, notebook)
+		}
+	}
+	return
+}
+
+// GetOpenedBoxesWithContext 使用 WorkspaceContext 获取已打开的笔记本列表
+func (conf *AppConf) GetOpenedBoxesWithContext(ctx *WorkspaceContext) (ret []*Box) {
+	ret = []*Box{}
+	notebooks, err := ListNotebooks(ctx)
 	if err != nil {
 		return
 	}

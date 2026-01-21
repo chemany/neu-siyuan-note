@@ -34,7 +34,8 @@ import (
 	"github.com/siyuan-note/siyuan/kernel/util"
 )
 
-func CreateBox(name string) (id string, err error) {
+// CreateBoxWithContext 使用 WorkspaceContext 创建笔记本
+func CreateBoxWithContext(ctx *WorkspaceContext, name string) (id string, err error) {
 	name = util.RemoveInvalid(name)
 	if 512 < utf8.RuneCountInString(name) {
 		// 限制笔记本名和文档名最大长度为 `512` https://github.com/siyuan-note/siyuan/issues/6299
@@ -50,7 +51,7 @@ func CreateBox(name string) (id string, err error) {
 	createDocLock.Lock()
 	defer createDocLock.Unlock()
 
-	boxes, _ := ListNotebooks(GetDefaultWorkspaceContext())
+	boxes, _ := ListNotebooks(ctx)
 	for i, b := range boxes {
 		c := b.GetConf()
 		c.Sort = i + 1
@@ -58,7 +59,8 @@ func CreateBox(name string) (id string, err error) {
 	}
 
 	id = ast.NewNodeID()
-	boxLocalPath := filepath.Join(util.DataDir, id)
+	// 使用 ctx.GetDataDir() 替代 util.DataDir
+	boxLocalPath := filepath.Join(ctx.GetDataDir(), id)
 	err = os.MkdirAll(boxLocalPath, 0755)
 	if err != nil {
 		return
@@ -71,6 +73,11 @@ func CreateBox(name string) (id string, err error) {
 	IncSync()
 	logging.LogInfof("created box [%s]", id)
 	return
+}
+
+// CreateBox 创建笔记本（向后兼容）
+func CreateBox(name string) (id string, err error) {
+	return CreateBoxWithContext(GetDefaultWorkspaceContext(), name)
 }
 
 func RenameBox(boxID, name string) (err error) {
@@ -100,7 +107,8 @@ func RenameBox(boxID, name string) (err error) {
 
 var boxLock = sync.Map{}
 
-func RemoveBox(boxID string) (err error) {
+// RemoveBoxWithContext 使用 WorkspaceContext 删除笔记本
+func RemoveBoxWithContext(ctx *WorkspaceContext, boxID string) (err error) {
 	if _, ok := boxLock.Load(boxID); ok {
 		err = fmt.Errorf(Conf.language(239))
 		return
@@ -118,7 +126,8 @@ func RemoveBox(boxID string) (err error) {
 	createDocLock.Lock()
 	defer createDocLock.Unlock()
 
-	localPath := filepath.Join(util.DataDir, boxID)
+	// 使用 ctx.GetDataDir() 替代 util.DataDir
+	localPath := filepath.Join(ctx.GetDataDir(), boxID)
 	if !filelock.IsExist(localPath) {
 		return
 	}
@@ -133,7 +142,8 @@ func RemoveBox(boxID string) (err error) {
 			logging.LogErrorf("get history dir failed: %s", err)
 			return
 		}
-		p := strings.TrimPrefix(localPath, util.DataDir)
+		// 使用 ctx.GetDataDir() 替代 util.DataDir
+		p := strings.TrimPrefix(localPath, ctx.GetDataDir())
 		historyPath := filepath.Join(historyDir, p)
 		if err = filelock.Copy(localPath, historyPath); err != nil {
 			logging.LogErrorf("gen sync history failed: %s", err)
@@ -153,10 +163,27 @@ func RemoveBox(boxID string) (err error) {
 	return
 }
 
+// RemoveBox 删除笔记本（向后兼容）
+func RemoveBox(boxID string) (err error) {
+	return RemoveBoxWithContext(GetDefaultWorkspaceContext(), boxID)
+}
+
 func Unmount(boxID string) {
 	FlushTxQueue()
 
 	unmount0(boxID)
+	evt := util.NewCmdResult("unmount", 0, util.PushModeBroadcast)
+	evt.Data = map[string]interface{}{
+		"box": boxID,
+	}
+	util.PushEvent(evt)
+}
+
+// UnmountWithContext 使用 WorkspaceContext 关闭笔记本
+func UnmountWithContext(ctx *WorkspaceContext, boxID string) {
+	FlushTxQueue()
+
+	unmount0WithContext(ctx, boxID)
 	evt := util.NewCmdResult("unmount", 0, util.PushModeBroadcast)
 	evt.Data = map[string]interface{}{
 		"box": boxID,
@@ -176,7 +203,21 @@ func unmount0(boxID string) {
 	box.Unindex()
 }
 
-func Mount(boxID string) (alreadyMount bool, err error) {
+// unmount0WithContext 使用 WorkspaceContext 关闭笔记本的内部实现
+func unmount0WithContext(ctx *WorkspaceContext, boxID string) {
+	box := Conf.BoxWithContext(ctx, boxID)
+	if nil == box {
+		return
+	}
+
+	boxConf := box.GetConf()
+	boxConf.Closed = true
+	box.SaveConf(boxConf)
+	box.Unindex()
+}
+
+// MountWithContext 使用 WorkspaceContext 打开笔记本
+func MountWithContext(ctx *WorkspaceContext, boxID string) (alreadyMount bool, err error) {
 	if _, ok := boxLock.Load(boxID); ok {
 		err = fmt.Errorf(Conf.language(239))
 		return
@@ -188,7 +229,8 @@ func Mount(boxID string) (alreadyMount bool, err error) {
 	FlushTxQueue()
 	isUserGuide := IsUserGuide(boxID)
 
-	localPath := filepath.Join(util.DataDir, boxID)
+	// 使用 ctx.GetDataDir() 替代 util.DataDir
+	localPath := filepath.Join(ctx.GetDataDir(), boxID)
 	var reMountGuide bool
 	if isUserGuide {
 		// 重新挂载帮助文档
@@ -203,7 +245,7 @@ func Mount(boxID string) (alreadyMount bool, err error) {
 			return
 		}
 
-		boxes, _ := ListNotebooks(GetDefaultWorkspaceContext())
+		boxes, _ := ListNotebooks(ctx)
 		var sort int
 		if len(boxes) > 0 {
 			sort = boxes[0].Sort - 1
@@ -216,7 +258,8 @@ func Mount(boxID string) (alreadyMount bool, err error) {
 
 		avDirPath := filepath.Join(util.WorkingDir, "guide", boxID, "storage", "av")
 		if filelock.IsExist(avDirPath) {
-			if err = filelock.Copy(avDirPath, filepath.Join(util.DataDir, "storage", "av")); err != nil {
+			// 使用 ctx.GetDataDir() 替代 util.DataDir
+			if err = filelock.Copy(avDirPath, filepath.Join(ctx.GetDataDir(), "storage", "av")); err != nil {
 				return
 			}
 		}
@@ -258,13 +301,18 @@ func Mount(boxID string) (alreadyMount bool, err error) {
 
 	box.Index()
 	// 缓存根一级的文档树展开
-	ListDocTree(GetDefaultWorkspaceContext(), box.ID, "/", util.SortModeUnassigned, false, false, Conf.FileTree.MaxListCount)
+	ListDocTree(ctx, box.ID, "/", util.SortModeUnassigned, false, false, Conf.FileTree.MaxListCount)
 	util.ClearPushProgress(100)
 
 	if reMountGuide {
 		return true, nil
 	}
 	return false, nil
+}
+
+// Mount 打开笔记本（向后兼容）
+func Mount(boxID string) (alreadyMount bool, err error) {
+	return MountWithContext(GetDefaultWorkspaceContext(), boxID)
 }
 
 func IsUserGuide(boxID string) bool {
