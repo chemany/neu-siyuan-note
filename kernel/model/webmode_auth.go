@@ -209,8 +209,13 @@ func CheckWebAuth(c *gin.Context) {
 
 	logging.LogInfof("[Web Mode] Authenticated user: %s (workspace: %s)", user.Username, user.Workspace)
 
+	// 创建 WorkspaceContext 并存储到 context（新架构）
+	workspaceCtx := NewWorkspaceContextWithUser(user.Workspace, user.ID, user.Username)
+	SetWorkspaceContext(c, workspaceCtx)
+
 	// 切换到用户的 workspace（使用互斥锁保护）
-	// 注意：这会导致请求串行化处理，但可以避免多用户并发访问时的数据混乱
+	// 注意：这是临时方案，最终会被移除
+	// TODO: 阶段 5 - 移除 workspace 切换逻辑
 	workspaceMutex.Lock()
 	
 	// 保存原始 workspace
