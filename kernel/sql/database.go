@@ -1336,6 +1336,23 @@ func queryRow(query string, args ...interface{}) *sql.Row {
 	return db.QueryRow(query, args...)
 }
 
+// queryRowWithContext 使用 WorkspaceContext 查询单行数据
+func queryRowWithContext(ctx WorkspaceContext, query string, args ...interface{}) *sql.Row {
+	query = strings.TrimSpace(query)
+	if "" == query {
+		logging.LogErrorf("statement is empty")
+		return nil
+	}
+	
+	database, err := GetDBWithContext(ctx)
+	if err != nil {
+		logging.LogErrorf("get database failed: %s", err)
+		return nil
+	}
+	
+	return database.QueryRow(query, args...)
+}
+
 func query(query string, args ...interface{}) (*sql.Rows, error) {
 	query = strings.TrimSpace(query)
 	if "" == query {
@@ -1347,8 +1364,41 @@ func query(query string, args ...interface{}) (*sql.Rows, error) {
 	return db.Query(query, args...)
 }
 
+// queryWithContext 使用 WorkspaceContext 查询多行数据
+func queryWithContext(ctx WorkspaceContext, query string, args ...interface{}) (*sql.Rows, error) {
+	query = strings.TrimSpace(query)
+	if "" == query {
+		return nil, errors.New("statement is empty")
+	}
+	
+	database, err := GetDBWithContext(ctx)
+	if err != nil {
+		logging.LogErrorf("get database failed: %s", err)
+		return nil, err
+	}
+	
+	return database.Query(query, args...)
+}
+
 func beginTx() (tx *sql.Tx, err error) {
 	if tx, err = db.Begin(); err != nil {
+		logging.LogErrorf("begin tx failed: %s\n  %s", err, logging.ShortStack())
+		if strings.Contains(err.Error(), "database is locked") {
+			os.Exit(logging.ExitCodeReadOnlyDatabase)
+		}
+	}
+	return
+}
+
+// beginTxWithContext 使用 WorkspaceContext 开始事务
+func beginTxWithContext(ctx WorkspaceContext) (tx *sql.Tx, err error) {
+	database, err := GetDBWithContext(ctx)
+	if err != nil {
+		logging.LogErrorf("get database failed: %s", err)
+		return nil, err
+	}
+	
+	if tx, err = database.Begin(); err != nil {
 		logging.LogErrorf("begin tx failed: %s\n  %s", err, logging.ShortStack())
 		if strings.Contains(err.Error(), "database is locked") {
 			os.Exit(logging.ExitCodeReadOnlyDatabase)

@@ -944,3 +944,209 @@ func GetBlocksByBox(boxID string) (ret []*Block, err error) {
 	}
 	return ret, nil
 }
+
+// ==================== 带 WorkspaceContext 的查询函数 ====================
+// 以下函数支持多用户数据隔离
+
+// GetBlockWithContext 使用 WorkspaceContext 获取块
+func GetBlockWithContext(ctx WorkspaceContext, id string) (ret *Block) {
+	// 注意: 缓存暂时不支持多用户隔离,这里直接查询数据库
+	// TODO: 实现按用户隔离的缓存
+	row := queryRowWithContext(ctx, "SELECT * FROM blocks WHERE id = ?", id)
+	if nil == row {
+		return
+	}
+	ret = scanBlockRow(row)
+	return
+}
+
+// GetBlocksByBoxWithContext 使用 WorkspaceContext 获取指定笔记本的所有块
+func GetBlocksByBoxWithContext(ctx WorkspaceContext, boxID string) (ret []*Block, err error) {
+	sqlStmt := "SELECT * FROM blocks WHERE box = ?"
+	rows, err := queryWithContext(ctx, sqlStmt, boxID)
+	if err != nil {
+		logging.LogErrorf("sql query [%s] failed: %s", sqlStmt, err)
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		if block := scanBlockRows(rows); nil != block {
+			ret = append(ret, block)
+		}
+	}
+	return ret, nil
+}
+
+// QueryWithContext 使用 WorkspaceContext 执行 SQL 查询
+func QueryWithContext(ctx WorkspaceContext, stmt string, limit int) (ret []map[string]interface{}, err error) {
+	// 使用与 Query 函数相同的逻辑,但使用 queryWithContext
+	p := sqlparser2.NewParser(strings.NewReader(stmt))
+	parsedStmt2, err := p.ParseStatement()
+	if err != nil {
+		if !strings.Contains(stmt, "||") {
+			parsedStmt, err2 := sqlparser.Parse(stmt)
+			if nil != err2 {
+				return queryRawStmtWithContext(ctx, stmt, limit)
+			}
+
+			switch parsedStmt.(type) {
+			case *sqlparser.Select:
+				limitClause := getLimitClause(parsedStmt, limit)
+				slct := parsedStmt.(*sqlparser.Select)
+				slct.Limit = limitClause
+				stmt = sqlparser.String(slct)
+			case *sqlparser.Union:
+				limitClause := getLimitClause(parsedStmt, limit)
+				union := parsedStmt.(*sqlparser.Union)
+				union.Limit = limitClause
+				stmt = sqlparser.String(union)
+			default:
+				return queryRawStmtWithContext(ctx, stmt, limit)
+			}
+		} else {
+			return queryRawStmtWithContext(ctx, stmt, limit)
+		}
+	} else {
+		switch parsedStmt2.(type) {
+		case *sqlparser2.SelectStatement:
+			slct := parsedStmt2.(*sqlparser2.SelectStatement)
+			if nil == slct.LimitExpr {
+				slct.LimitExpr = &sqlparser2.NumberLit{Value: strconv.Itoa(limit)}
+			}
+			stmt = slct.String()
+		default:
+			return queryRawStmtWithContext(ctx, stmt, limit)
+		}
+	}
+
+	ret = []map[string]interface{}{}
+	rows, err := queryWithContext(ctx, stmt)
+	if err != nil {
+		logging.LogWarnf("sql query [%s] failed: %s", stmt, err)
+		return
+	}
+	defer rows.Close()
+
+	cols, _ := rows.Columns()
+	if nil == cols {
+		return
+	}
+
+	for rows.Next() {
+		columns := make([]interface{}, len(cols))
+		columnPointers := make([]interface{}, len(cols))
+		for i := range columns {
+			columnPointers[i] = &columns[i]
+		}
+
+		if err = rows.Scan(columnPointers...); err != nil {
+			return
+		}
+
+		m := make(map[string]interface{})
+		for i, colName := range cols {
+			val := columnPointers[i].(*interface{})
+			m[colName] = *val
+		}
+		ret = append(ret, m)
+	}
+	return
+}
+
+// queryRawStmtWithContext 使用 WorkspaceContext 执行原始 SQL 语句
+func queryRawStmtWithContext(ctx WorkspaceContext, stmt string, limit int) (ret []map[string]interface{}, err error) {
+	ret = []map[string]interface{}{}
+	rows, err := queryWithContext(ctx, stmt)
+	if err != nil {
+		logging.LogWarnf("sql query [%s] failed: %s", stmt, err)
+		return
+	}
+	defer rows.Close()
+
+	cols, _ := rows.Columns()
+	if nil == cols {
+		return
+	}
+
+	count := 0
+	for rows.Next() {
+		if limit <= count {
+			break
+		}
+		count++
+
+		columns := make([]interface{}, len(cols))
+		columnPointers := make([]interface{}, len(cols))
+		for i := range columns {
+			columnPointers[i] = &columns[i]
+		}
+
+		if err = rows.Scan(columnPointers...); err != nil {
+			return
+		}
+
+		m := make(map[string]interface{})
+		for i, colName := range cols {
+			val := columnPointers[i].(*interface{})
+			m[colName] = *val
+		}
+		ret = append(ret, m)
+	}
+	return
+}
+
+// SelectBlocksRawStmtWithContext 使用 WorkspaceContext 执行原始 SQL 查询并返回块列表
+func SelectBlocksRawStmtWithContext(ctx WorkspaceContext, stmt string, page, limit int) (ret []*Block) {
+	parsedStmt, err := sqlparser.Parse(stmt)
+	if err != nil {
+		logging.LogWarnf("sql parse [%s] failed: %s", stmt, err)
+		return selectBlocksRawStmtNoParseWithContext(ctx, stmt, limit)
+	}
+
+	switch parsedStmt.(type) {
+	case *sqlparser.Select:
+		limitClause := getLimitClause(parsedStmt, limit)
+		slct := parsedStmt.(*sqlparser.Select)
+		slct.Limit = limitClause
+		if 1 < page {
+			slct.Limit.Offset = sqlparser.NewIntVal([]byte(strconv.Itoa((page - 1) * limit)))
+		}
+		stmt = sqlparser.String(slct)
+	case *sqlparser.Union:
+		limitClause := getLimitClause(parsedStmt, limit)
+		union := parsedStmt.(*sqlparser.Union)
+		union.Limit = limitClause
+		if 1 < page {
+			union.Limit.Offset = sqlparser.NewIntVal([]byte(strconv.Itoa((page - 1) * limit)))
+		}
+		stmt = sqlparser.String(union)
+	default:
+		return selectBlocksRawStmtNoParseWithContext(ctx, stmt, limit)
+	}
+
+	return selectBlocksRawStmtNoParseWithContext(ctx, stmt, limit)
+}
+
+// selectBlocksRawStmtNoParseWithContext 使用 WorkspaceContext 执行原始 SQL 查询(不解析)
+func selectBlocksRawStmtNoParseWithContext(ctx WorkspaceContext, stmt string, limit int) (ret []*Block) {
+	rows, err := queryWithContext(ctx, stmt)
+	if err != nil {
+		logging.LogWarnf("sql query [%s] failed: %s", stmt, err)
+		return
+	}
+	defer rows.Close()
+
+	count := 0
+	for rows.Next() {
+		if limit <= count {
+			break
+		}
+		count++
+
+		if block := scanBlockRows(rows); nil != block {
+			ret = append(ret, block)
+		}
+	}
+	return
+}
