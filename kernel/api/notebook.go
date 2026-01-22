@@ -194,7 +194,8 @@ func createNotebook(c *gin.Context) {
 	box.Icon = boxConf.Icon
 	box.Sort = boxConf.Sort
 	box.SortMode = boxConf.SortMode
-	box.Closed = boxConf.Closed
+	// MountWithContext 已经设置 Closed = false，但为了确保正确，这里显式设置
+	box.Closed = false  // 新创建的笔记本应该是打开状态
 
 	ret.Data = map[string]interface{}{
 		"notebook": box,
