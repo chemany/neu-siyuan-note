@@ -182,13 +182,19 @@ func createNotebook(c *gin.Context) {
 		return
 	}
 
-	// 使用带 Context 的版本
-	box := model.Conf.BoxWithContext(ctx, id)
-	if nil == box {
-		ret.Code = -1
-		ret.Msg = "opened notebook [" + id + "] not found"
-		return
+	// 直接构造笔记本对象，而不是从 BoxWithContext 获取
+	// 因为 BoxWithContext 依赖于文件系统扫描，可能存在时序问题
+	box := &model.Box{
+		ID:   id,
+		Name: name,
 	}
+	
+	// 尝试从配置文件读取完整信息
+	boxConf := box.GetConf()
+	box.Icon = boxConf.Icon
+	box.Sort = boxConf.Sort
+	box.SortMode = boxConf.SortMode
+	box.Closed = boxConf.Closed
 
 	ret.Data = map[string]interface{}{
 		"notebook": box,

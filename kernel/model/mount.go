@@ -288,7 +288,8 @@ func MountWithContext(ctx *WorkspaceContext, boxID string) (alreadyMount bool, e
 		return false, errors.New("can not open file, just support open folder only")
 	}
 
-	for _, box := range Conf.GetOpenedBoxes() {
+	// 使用 GetOpenedBoxesWithContext 检查笔记本是否已打开
+	for _, box := range Conf.GetOpenedBoxesWithContext(ctx) {
 		if box.ID == boxID {
 			return true, nil
 		}
