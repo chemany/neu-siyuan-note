@@ -23,6 +23,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -200,6 +201,7 @@ func (s *FileUserStore) createUserWorkspace(user *User) error {
 		"conf/appearance/emojis",
 		"conf/appearance/themes",
 		"conf/appearance/icons",
+		"conf/appearance/langs",
 		"emojis",
 		"history",
 		"plugins",
@@ -224,6 +226,13 @@ func (s *FileUserStore) createUserWorkspace(user *User) error {
 		if writeErr := os.WriteFile(emojisConfPath, defaultEmojisConf, 0644); writeErr != nil {
 			logging.LogWarnf("Failed to create emojis conf.json: %v", writeErr)
 		}
+	}
+
+	// 复制语言文件到用户的 conf/appearance/langs 目录
+	globalLangsDir := filepath.Join(util.WorkingDir, "appearance", "langs")
+	userLangsDir := filepath.Join(workspaceDir, "conf", "appearance", "langs")
+	if err := copyLangFiles(globalLangsDir, userLangsDir); err != nil {
+		logging.LogWarnf("Failed to copy language files: %v", err)
 	}
 
 	user.Workspace = workspaceDir
@@ -366,3 +375,55 @@ func InitUserStore() error {
 func GetUserStore() UserStore {
 	return globalUserStore
 }
+
+// copyLangFiles 复制语言文件从源目录到目标目录
+func copyLangFiles(srcDir, dstDir string) error {
+	// 读取源目录中的所有文件
+	entries, err := os.ReadDir(srcDir)
+	if err != nil {
+		return fmt.Errorf("failed to read source directory: %w", err)
+	}
+
+	// 确保目标目录存在
+	if err := os.MkdirAll(dstDir, 0755); err != nil {
+		return fmt.Errorf("failed to create destination directory: %w", err)
+	}
+
+	// 复制每个 .json 文件
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+
+		// 只复制 .json 文件
+		if !strings.HasSuffix(entry.Name(), ".json") {
+			continue
+		}
+
+		srcPath := filepath.Join(srcDir, entry.Name())
+		dstPath := filepath.Join(dstDir, entry.Name())
+
+		// 如果目标文件已存在,跳过
+		if _, err := os.Stat(dstPath); err == nil {
+			continue
+		}
+
+		// 读取源文件
+		data, err := os.ReadFile(srcPath)
+		if err != nil {
+			logging.LogWarnf("Failed to read language file %s: %v", srcPath, err)
+			continue
+		}
+
+		// 写入目标文件
+		if err := os.WriteFile(dstPath, data, 0644); err != nil {
+			logging.LogWarnf("Failed to write language file %s: %v", dstPath, err)
+			continue
+		}
+
+		logging.LogInfof("Copied language file: %s -> %s", srcPath, dstPath)
+	}
+
+	return nil
+}
+

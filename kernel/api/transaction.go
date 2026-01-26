@@ -64,7 +64,9 @@ func performTransactions(c *gin.Context) {
 		transaction.Timestamp = timestamp
 	}
 
-	model.PerformTransactions(&transactions)
+	// 获取 WorkspaceContext 并使用带 context 的函数
+	ctx := model.GetWorkspaceContext(c)
+	model.PerformTransactionsWithContext(ctx, &transactions)
 
 	ret.Data = transactions
 

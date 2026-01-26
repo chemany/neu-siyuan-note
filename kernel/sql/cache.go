@@ -153,7 +153,7 @@ func getBlockCacheWithContext(ctx WorkspaceContext, id string) (ret *Block) {
 }
 
 // removeBlockCacheWithContext 从用户缓存删除 Block
-func removeBlockCacheWithContext(ctx WorkspaceContext, id string) {
+func removeBlockCacheWithContext(ctx WorkspaceContextInterface, id string) {
 	userCache := cache.GetUserCacheWithContext(ctx)
 	userCache.GetBlockCache().Del(id)
 	removeRefCacheByDefIDWithContext(ctx, id)

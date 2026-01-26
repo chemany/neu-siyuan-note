@@ -30,7 +30,6 @@ import (
 	"github.com/88250/lute/parse"
 	"github.com/emirpasic/gods/sets/hashset"
 	"github.com/siyuan-note/logging"
-	"github.com/siyuan-note/siyuan/kernel/filesys"
 	"github.com/siyuan-note/siyuan/kernel/search"
 	"github.com/siyuan-note/siyuan/kernel/sql"
 	"github.com/siyuan-note/siyuan/kernel/task"
@@ -39,11 +38,19 @@ import (
 )
 
 func RefreshBacklink(id string) {
+	RefreshBacklinkWithContext(GetDefaultWorkspaceContext(), id)
+}
+
+func RefreshBacklinkWithContext(ctx *WorkspaceContext, id string) {
 	FlushTxQueue()
-	refreshRefsByDefID(id)
+	refreshRefsByDefIDWithContext(ctx, id)
 }
 
 func refreshRefsByDefID(defID string) {
+	refreshRefsByDefIDWithContext(GetDefaultWorkspaceContext(), defID)
+}
+
+func refreshRefsByDefIDWithContext(ctx *WorkspaceContext, defID string) {
 	refs := sql.QueryRefsByDefID(defID, true)
 	var rootIDs []string
 	for _, ref := range refs {
@@ -51,7 +58,7 @@ func refreshRefsByDefID(defID string) {
 		task.AppendAsyncTaskWithDelay(task.SetDefRefCount, util.SQLFlushInterval, refreshRefCount, ref.DefBlockID)
 	}
 	rootIDs = gulu.Str.RemoveDuplicatedElem(rootIDs)
-	trees := filesys.LoadTrees(rootIDs)
+	trees := LoadTreesWithContext(ctx, rootIDs)
 	for _, tree := range trees {
 		sql.UpdateRefsTreeQueue(tree)
 		task.AppendAsyncTaskWithDelay(task.SetDefRefCount, util.SQLFlushInterval, refreshRefCount, tree.ID)
@@ -70,6 +77,10 @@ type Backlink struct {
 }
 
 func GetBackmentionDoc(defID, refTreeID, keyword string, containChildren, highlight bool) (ret []*Backlink, keywords []string) {
+	return GetBackmentionDocWithContext(GetDefaultWorkspaceContext(), defID, refTreeID, keyword, containChildren, highlight)
+}
+
+func GetBackmentionDocWithContext(ctx *WorkspaceContext, defID, refTreeID, keyword string, containChildren, highlight bool) (ret []*Backlink, keywords []string) {
 	keyword = strings.TrimSpace(keyword)
 	if "" != keyword {
 		keywords = strings.Split(keyword, " ")
@@ -111,7 +122,7 @@ func GetBackmentionDoc(defID, refTreeID, keyword string, containChildren, highli
 	}
 
 	var refTree *parse.Tree
-	trees := filesys.LoadTrees(mentionBlockIDs)
+	trees := LoadTreesWithContext(ctx, mentionBlockIDs)
 	for id, tree := range trees {
 		backlink := buildBacklink(id, tree, originalRefBlockIDs, mentionKeywords, highlight, luteEngine)
 		if nil != backlink {

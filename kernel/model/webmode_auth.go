@@ -62,7 +62,10 @@ func CheckWebAuth(c *gin.Context) {
 		"/stage/build/desktop",  // desktop 目录（包含所有桌面端资源）
 		"/stage/build/mobile",   // mobile 目录（包含所有移动端资源）
 		"/stage/build/app",      // app 目录（包含所有应用端资源）
-		"/appearance/",
+		"/appearance/themes/",   // 主题资源（公共）
+		"/appearance/icons/",    // 图标资源（公共）
+		"/appearance/emojis/",   // 表情资源（公共）
+		// 注意：/appearance/langs/ 不在公共路径中，需要认证才能访问
 		"/favicon.ico",
 		"/manifest.webmanifest",
 		"/manifest.json",
@@ -166,19 +169,39 @@ func CheckWebAuth(c *gin.Context) {
 	}
 
 	// 验证JWT token
+	// 支持两种 token：
+	// 1. 灵枢笔记自己生成的 token（通过 WebAuthService 验证）
+	// 2. 统一认证服务生成的 token（通过 UnifiedAuthService 验证）
+	
+	var user *User
+	var err error
+	
+	// 首先尝试使用 WebAuthService 验证（灵枢笔记 token）
 	authService := GetWebAuthService()
-	if authService == nil {
-		logging.LogErrorf("[Web Mode] WebAuthService not initialized")
-		c.JSON(http.StatusInternalServerError, map[string]interface{}{
-			"code": -1,
-			"msg":  "认证服务未初始化",
-		})
-		c.Abort()
-		return
+	if authService != nil {
+		user, err = authService.ValidateToken(token)
 	}
-
-	user, err := authService.ValidateToken(token)
-	if err != nil {
+	
+	// 如果验证失败，尝试使用 UnifiedAuthService 验证（统一认证 token）
+	if err != nil || user == nil {
+		unifiedService := GetUnifiedAuthService()
+		if unifiedService != nil {
+			// 验证统一认证 token
+			unifiedUser, unifiedErr := unifiedService.VerifyToken(token)
+			if unifiedErr == nil && unifiedUser != nil {
+				// 统一认证 token 有效，确保本地用户存在
+				user, err = unifiedService.EnsureLocalUser(unifiedUser)
+				if err != nil {
+					logging.LogErrorf("[Web Mode] Failed to ensure local user: %s", err)
+				} else {
+					logging.LogInfof("[Web Mode] Authenticated with unified token: %s", unifiedUser.Username)
+				}
+			}
+		}
+	}
+	
+	// 如果两种验证都失败，返回错误
+	if err != nil || user == nil {
 		logging.LogWarnf("[Web Mode] Invalid token: %s", err)
 
 		if strings.HasPrefix(requestPath, "/api/") {

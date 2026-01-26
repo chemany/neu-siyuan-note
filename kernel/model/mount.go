@@ -53,9 +53,9 @@ func CreateBoxWithContext(ctx *WorkspaceContext, name string) (id string, err er
 
 	boxes, _ := ListNotebooks(ctx)
 	for i, b := range boxes {
-		c := b.GetConf()
+		c := b.GetConfWithDataDir(ctx.GetDataDir())
 		c.Sort = i + 1
-		b.SaveConf(c)
+		b.SaveConfWithDataDir(ctx.GetDataDir(), c)
 	}
 
 	id = ast.NewNodeID()
@@ -67,11 +67,15 @@ func CreateBoxWithContext(ctx *WorkspaceContext, name string) (id string, err er
 	}
 
 	box := &Box{ID: id, Name: name}
-	boxConf := box.GetConf()
+	boxConf := box.GetConfWithDataDir(ctx.GetDataDir())
 	boxConf.Name = name
-	box.SaveConf(boxConf)
+	boxConf.Closed = false  // 新创建的笔记本应该是打开状态
+	
+	// 使用带 dataDir 的保存方法
+	box.SaveConfWithDataDir(ctx.GetDataDir(), boxConf)
+	
 	IncSync()
-	logging.LogInfof("created box [%s]", id)
+	logging.LogInfof("created box [%s] with name [%s]", id, name)
 	return
 }
 
@@ -296,11 +300,15 @@ func MountWithContext(ctx *WorkspaceContext, boxID string) (alreadyMount bool, e
 	}
 
 	box := &Box{ID: boxID}
-	boxConf := box.GetConf()
+	boxConf := box.GetConfWithDataDir(ctx.GetDataDir())
 	boxConf.Closed = false
-	box.SaveConf(boxConf)
+	
+	// 使用带 dataDir 的保存方法
+	box.SaveConfWithDataDir(ctx.GetDataDir(), boxConf)
 
-	box.Index()
+	// 使用带 Context 的索引方法
+	// 使用带 Context 的索引方法(通过后台任务系统)
+	box.IndexWithContext(ctx)
 	// 缓存根一级的文档树展开
 	ListDocTree(ctx, box.ID, "/", util.SortModeUnassigned, false, false, Conf.FileTree.MaxListCount)
 	util.ClearPushProgress(100)

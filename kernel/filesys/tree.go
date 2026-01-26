@@ -24,6 +24,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"strings"
 	"sync"
 
@@ -39,6 +40,17 @@ import (
 	"github.com/siyuan-note/siyuan/kernel/treenode"
 	"github.com/siyuan-note/siyuan/kernel/util"
 )
+
+// GetDataDirFunc 是一个函数变量，用于获取当前的 DataDir
+// 在 Web 模式下，model 包会注入一个返回用户特定 DataDir 的函数
+var GetDataDirFunc func() string
+
+// init 初始化 GetDataDirFunc 为默认实现
+func init() {
+	GetDataDirFunc = func() string {
+		return util.DataDir
+	}
+}
 
 func LoadTrees(ids []string) (ret map[string]*parse.Tree) {
 	ret = map[string]*parse.Tree{}
@@ -61,6 +73,44 @@ func LoadTrees(ids []string) (ret map[string]*parse.Tree) {
 	}
 
 	trees, errs := batchLoadTrees(boxIDs, paths, luteEngine)
+	for i := range trees {
+		tree := trees[i]
+		err := errs[i]
+		if err != nil || tree == nil {
+			logging.LogErrorf("load tree failed: %s", err)
+			continue
+		}
+
+		bIDs := blockIDs[tree.Root.ID]
+		for _, bID := range bIDs {
+			ret[bID] = tree
+		}
+	}
+	return
+}
+
+// LoadTreesWithDataDir 使用指定的 dataDir 加载多个树
+func LoadTreesWithDataDir(dataDir string, ids []string) (ret map[string]*parse.Tree) {
+	ret = map[string]*parse.Tree{}
+	if 1 > len(ids) {
+		return ret
+	}
+
+	bts := treenode.GetBlockTrees(ids)
+	luteEngine := util.NewLute()
+	var boxIDs []string
+	var paths []string
+	blockIDs := map[string][]string{}
+	for _, bt := range bts {
+		boxIDs = append(boxIDs, bt.BoxID)
+		paths = append(paths, bt.Path)
+		if _, ok := blockIDs[bt.RootID]; !ok {
+			blockIDs[bt.RootID] = []string{}
+		}
+		blockIDs[bt.RootID] = append(blockIDs[bt.RootID], bt.ID)
+	}
+
+	trees, errs := batchLoadTreesWithDataDir(dataDir, boxIDs, paths, luteEngine)
 	for i := range trees {
 		tree := trees[i]
 		err := errs[i]
@@ -112,8 +162,47 @@ func batchLoadTrees(boxIDs, paths []string, luteEngine *lute.Lute) (ret []*parse
 	return
 }
 
+// batchLoadTreesWithDataDir 使用指定的 dataDir 批量加载树
+func batchLoadTreesWithDataDir(dataDir string, boxIDs, paths []string, luteEngine *lute.Lute) (ret []*parse.Tree, errs []error) {
+	waitGroup := sync.WaitGroup{}
+	lock := sync.Mutex{}
+	poolSize := runtime.NumCPU()
+	if 8 < poolSize {
+		poolSize = 8
+	}
+	p, _ := ants.NewPoolWithFunc(poolSize, func(arg interface{}) {
+		defer waitGroup.Done()
+
+		i := arg.(int)
+		boxID := boxIDs[i]
+		path := paths[i]
+		tree, err := LoadTreeWithDataDir(dataDir, boxID, path, luteEngine)
+		lock.Lock()
+		ret = append(ret, tree)
+		errs = append(errs, err)
+		lock.Unlock()
+	})
+	loaded := map[string]bool{}
+	for i := range paths {
+		if loaded[boxIDs[i]+paths[i]] {
+			continue
+		}
+
+		loaded[boxIDs[i]+paths[i]] = true
+
+		waitGroup.Add(1)
+		p.Invoke(i)
+	}
+	waitGroup.Wait()
+	p.Release()
+	return
+}
+
 func LoadTree(boxID, p string, luteEngine *lute.Lute) (ret *parse.Tree, err error) {
-	filePath := filepath.Join(util.DataDir, boxID, p)
+	// 使用 GetDataDirFunc 获取 DataDir
+	// 在 Web 模式下，这会返回当前用户的 DataDir
+	dataDir := GetDataDirFunc()
+	filePath := filepath.Join(dataDir, boxID, p)
 	data, err := filelock.ReadFile(filePath)
 	if err != nil {
 		logging.LogErrorf("load tree [%s] failed: %s", p, err)
@@ -133,12 +222,19 @@ func LoadTreeWithDataDir(dataDir, boxID, p string, luteEngine *lute.Lute) (ret *
 		return
 	}
 
-	ret, err = LoadTreeByData(data, boxID, p, luteEngine)
+	ret, err = LoadTreeByDataWithDataDir(data, boxID, p, dataDir, luteEngine)
 	return
 }
 
 func LoadTreeByData(data []byte, boxID, p string, luteEngine *lute.Lute) (ret *parse.Tree, err error) {
-	ret = parseJSON2Tree(boxID, p, data, luteEngine)
+	// 使用 GetDataDirFunc 获取 DataDir
+	dataDir := GetDataDirFunc()
+	return LoadTreeByDataWithDataDir(data, boxID, p, dataDir, luteEngine)
+}
+
+// LoadTreeByDataWithDataDir 使用指定的 dataDir 从数据加载树
+func LoadTreeByDataWithDataDir(data []byte, boxID, p string, dataDir string, luteEngine *lute.Lute) (ret *parse.Tree, err error) {
+	ret = parseJSON2TreeWithDataDir(dataDir, boxID, p, data, luteEngine)
 	if nil == ret {
 		logging.LogErrorf("parse tree [%s] failed", p)
 		err = errors.New("parse tree failed")
@@ -146,6 +242,14 @@ func LoadTreeByData(data []byte, boxID, p string, luteEngine *lute.Lute) (ret *p
 	}
 	ret.Path = p
 	ret.Root.Path = p
+	return
+}
+
+func parseJSON2TreeWithDataDir(dataDir, boxID, p string, jsonData []byte, luteEngine *lute.Lute) (ret *parse.Tree) {
+	ret = parseJSON2Tree(boxID, p, jsonData, luteEngine)
+	if nil == ret {
+		return
+	}
 
 	parts := strings.Split(p, "/")
 	parts = parts[1 : len(parts)-1] // 去掉开头的斜杆和结尾的自己
@@ -167,13 +271,15 @@ func LoadTreeByData(data []byte, boxID, p string, luteEngine *lute.Lute) (ret *p
 		}
 		parentAbsPath += ".sy"
 		parentPath := parentAbsPath
-		parentAbsPath = filepath.Join(util.DataDir, boxID, parentAbsPath)
+		// 使用传入的 dataDir 而不是 util.DataDir
+		parentAbsPath = filepath.Join(dataDir, boxID, parentAbsPath)
 
 		parentDocIAL := DocIAL(parentAbsPath)
 		if 1 > len(parentDocIAL) {
 			// 子文档缺失父文档时自动补全 https://github.com/siyuan-note/siyuan/issues/7376
 			parentTree := treenode.NewTree(boxID, parentPath, hPathBuilder.String()+"Untitled", "Untitled")
-			if _, writeErr := WriteTree(parentTree); nil != writeErr {
+			// 使用 WriteTreeWithDataDir 而不是 WriteTree，确保使用正确的 dataDir
+			if _, writeErr := WriteTreeWithDataDir(parentTree, dataDir); nil != writeErr {
 				logging.LogErrorf("rebuild parent tree [%s] failed: %s", parentAbsPath, writeErr)
 			} else {
 				logging.LogInfof("rebuilt parent tree [%s]", parentAbsPath)
@@ -226,10 +332,21 @@ func TreeSize(tree *parse.Tree) (size uint64) {
 }
 
 func WriteTree(tree *parse.Tree) (size uint64, err error) {
-	data, filePath, err := prepareWriteTree(tree)
+	// 添加日志以追踪使用全局 DataDir 的调用，包括堆栈信息
+	logging.LogWarnf("WriteTree: writing tree [%s] using GLOBAL util.DataDir [%s] - this should be avoided in multi-user mode", tree.ID, util.DataDir)
+	logging.LogWarnf("WriteTree: Stack trace: %s", string(debug.Stack()))
+	return WriteTreeWithDataDir(tree, util.DataDir)
+}
+
+// WriteTreeWithDataDir 使用指定的 dataDir 写入树
+func WriteTreeWithDataDir(tree *parse.Tree, dataDir string) (size uint64, err error) {
+	data, filePath, err := prepareWriteTreeWithDataDir(tree, dataDir)
 	if err != nil {
 		return
 	}
+
+	// 添加详细日志以追踪文件写入
+	logging.LogInfof("WriteTreeWithDataDir: writing tree [%s] to [%s] with dataDir [%s]", tree.ID, filePath, dataDir)
 
 	size = uint64(len(data))
 	if err = filelock.WriteFile(filePath, data); err != nil {
@@ -249,6 +366,11 @@ func WriteTree(tree *parse.Tree) (size uint64, err error) {
 }
 
 func prepareWriteTree(tree *parse.Tree) (data []byte, filePath string, err error) {
+	return prepareWriteTreeWithDataDir(tree, util.DataDir)
+}
+
+// prepareWriteTreeWithDataDir 使用指定的 dataDir 准备写入树
+func prepareWriteTreeWithDataDir(tree *parse.Tree, dataDir string) (data []byte, filePath string, err error) {
 	luteEngine := util.NewLute() // 不关注用户的自定义解析渲染选项
 
 	if nil == tree.Root.FirstChild {
@@ -258,7 +380,7 @@ func prepareWriteTree(tree *parse.Tree) (data []byte, filePath string, err error
 		treenode.UpsertBlockTree(tree)
 	}
 
-	filePath = filepath.Join(util.DataDir, tree.Box, tree.Path)
+	filePath = filepath.Join(dataDir, tree.Box, tree.Path)
 	if oldSpec := tree.Root.Spec; "" == oldSpec {
 		parse.NestedInlines2FlattedSpans(tree, false)
 		tree.Root.Spec = "1"

@@ -32,6 +32,17 @@ import (
 	"github.com/siyuan-note/siyuan/kernel/util"
 )
 
+// GetDataDirFunc 是一个函数变量，用于获取当前的 DataDir
+// 在 Web 模式下，model 包会注入一个返回用户特定 DataDir 的函数
+var GetDataDirFunc func() string
+
+// init 初始化 GetDataDirFunc 为默认实现
+func init() {
+	GetDataDirFunc = func() string {
+		return util.DataDir
+	}
+}
+
 func NodeHash(node *ast.Node, tree *parse.Tree, luteEngine *lute.Lute) string {
 	ialArray := node.KramdownIAL
 	sort.Slice(ialArray, func(i, j int) bool {
@@ -95,7 +106,9 @@ func RootChildIDs(rootID string) (ret []string) {
 	}
 
 	ret = append(ret, rootID)
-	boxLocalPath := filepath.Join(util.DataDir, root.BoxID)
+	// 使用 GetDataDirFunc 获取 DataDir
+	dataDir := GetDataDirFunc()
+	boxLocalPath := filepath.Join(dataDir, root.BoxID)
 	subFolder := filepath.Join(boxLocalPath, strings.TrimSuffix(root.Path, ".sy"))
 	if !gulu.File.IsDir(subFolder) {
 		return

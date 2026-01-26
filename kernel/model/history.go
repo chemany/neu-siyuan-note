@@ -806,8 +806,21 @@ func GetHistoryDir(suffix string) (ret string, err error) {
 	return getHistoryDir(suffix, time.Now())
 }
 
+func GetHistoryDirWithContext(ctx *WorkspaceContext, suffix string) (ret string, err error) {
+	return getHistoryDirWithContext(ctx, suffix, time.Now())
+}
+
 func getHistoryDir(suffix string, t time.Time) (ret string, err error) {
 	ret = filepath.Join(util.HistoryDir, t.Format("2006-01-02-150405")+"-"+suffix)
+	if err = os.MkdirAll(ret, 0755); err != nil {
+		logging.LogErrorf("make history dir failed: %s", err)
+		return
+	}
+	return
+}
+
+func getHistoryDirWithContext(ctx *WorkspaceContext, suffix string, t time.Time) (ret string, err error) {
+	ret = filepath.Join(ctx.HistoryDir, t.Format("2006-01-02-150405")+"-"+suffix)
 	if err = os.MkdirAll(ret, 0755); err != nil {
 		logging.LogErrorf("make history dir failed: %s", err)
 		return

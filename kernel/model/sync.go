@@ -717,6 +717,12 @@ func IncSync() {
 	planSyncAfter(time.Duration(Conf.Sync.Interval) * time.Second)
 }
 
+func IncSyncWithContext(ctx *WorkspaceContext) {
+	// 在多用户模式下,同步逻辑可能需要针对每个用户单独处理
+	// 目前先使用全局的 IncSync
+	IncSync()
+}
+
 func planSyncAfter(d time.Duration) {
 	syncPlanTimeLock.Lock()
 	syncPlanTime = time.Now().Add(d)

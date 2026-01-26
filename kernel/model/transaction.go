@@ -1994,8 +1994,15 @@ func (tx *Transaction) begin() (err error) {
 
 func (tx *Transaction) commit() (err error) {
 	for _, tree := range tx.trees {
-		if err = writeTreeUpsertQueue(tree); err != nil {
-			return
+		// 如果有 WorkspaceContext，使用用户特定的数据目录
+		if nil != tx.ctx {
+			if err = writeTreeUpsertQueueWithContext(tree, tx.ctx); err != nil {
+				return
+			}
+		} else {
+			if err = writeTreeUpsertQueue(tree); err != nil {
+				return
+			}
 		}
 
 		var sources []interface{}
@@ -2004,7 +2011,7 @@ func (tx *Transaction) commit() (err error) {
 
 		checkUpsertInUserGuide(tree)
 	}
-	refreshDynamicRefTexts(tx.nodes, tx.trees)
+	refreshDynamicRefTexts(tx.nodes, tx.trees, tx.ctx)
 	IncSync()
 	tx.state.Store(2)
 	tx.m.Unlock()
@@ -2030,6 +2037,19 @@ func (tx *Transaction) loadTreeByBlockTree(bt *treenode.BlockTree) (ret *parse.T
 
 	// 如果有 WorkspaceContext，使用带 DataDir 的版本
 	if nil != tx.ctx {
+		// 如果是 Web 模式，从用户特定的数据库读取 BlockTree
+		if tx.ctx.IsWebMode() {
+			database, dbErr := treenode.GetBlockTreeDBManager().GetOrCreateDB(tx.ctx.BlockTreeDBPath)
+			if nil == dbErr {
+				// 从用户特定的数据库读取
+				userBT := treenode.GetBlockTreeWithDB(bt.ID, database)
+				if nil != userBT {
+					bt = userBT
+					logging.LogInfof("tx: loaded BlockTree from user database [%s] for block [%s]", tx.ctx.BlockTreeDBPath, bt.ID)
+				}
+			}
+		}
+		
 		ret, err = filesys.LoadTreeWithDataDir(tx.ctx.DataDir, bt.BoxID, bt.Path, tx.luteEngine)
 	} else {
 		ret, err = filesys.LoadTree(bt.BoxID, bt.Path, tx.luteEngine)
@@ -2071,7 +2091,21 @@ func (tx *Transaction) loadTree(id string) (ret *parse.Tree, err error) {
 
 func (tx *Transaction) writeTree(tree *parse.Tree) (err error) {
 	tx.trees[tree.ID] = tree
-	treenode.UpsertBlockTree(tree)
+	
+	// 使用用户特定的 BlockTree 数据库
+	if nil != tx.ctx && tx.ctx.IsWebMode() {
+		database, dbErr := treenode.GetBlockTreeDBManager().GetOrCreateDB(tx.ctx.BlockTreeDBPath)
+		if nil != dbErr {
+			logging.LogErrorf("get or create BlockTree database [%s] failed: %s", tx.ctx.BlockTreeDBPath, dbErr)
+			// 降级到全局数据库
+			treenode.UpsertBlockTree(tree)
+		} else {
+			treenode.UpsertBlockTreeWithDB(tree, database)
+		}
+	} else {
+		// 非 Web 模式或没有 context，使用全局数据库
+		treenode.UpsertBlockTree(tree)
+	}
 	return
 }
 

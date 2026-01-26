@@ -13,6 +13,10 @@ import (
 )
 
 func RenderAttributeViewKanban(attrView *av.AttributeView, view *av.View, query string, depth *int, cachedAttrViews map[string]*av.AttributeView) (ret *av.Kanban) {
+	return RenderAttributeViewKanbanWithDataDir(util.DataDir, attrView, view, query, depth, cachedAttrViews)
+}
+
+func RenderAttributeViewKanbanWithDataDir(dataDir string, attrView *av.AttributeView, view *av.View, query string, depth *int, cachedAttrViews map[string]*av.AttributeView) (ret *av.Kanban) {
 	viewable := attrView.RenderedViewables[view.ID]
 	if nil != viewable {
 		ret = viewable.(*av.Kanban)
@@ -76,7 +80,7 @@ func RenderAttributeViewKanban(attrView *av.AttributeView, view *av.View, query 
 			}
 		}
 	}
-	boundTrees := filesys.LoadTrees(ialIDs)
+	boundTrees := filesys.LoadTreesWithDataDir(dataDir, ialIDs)
 
 	// 生成卡片字段值
 	for cardID, cardValues := range cardsValues {

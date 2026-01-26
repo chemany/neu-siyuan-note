@@ -82,7 +82,9 @@ func RemoveInvalidRetainCtrl(text string) (ret string) {
 var NativeEmojiChars = map[string]bool{}
 
 func InitEmojiChars() {
-	builtConfPath := filepath.Join(AppearancePath, "emojis", "conf.json")
+	// emojis 配置是系统级别的共享资源，从应用程序目录读取
+	// 所有用户共享同一套 emojis 配置
+	builtConfPath := filepath.Join(WorkingDir, "appearance", "emojis", "conf.json")
 	data, err := os.ReadFile(builtConfPath)
 	if err != nil {
 		logging.LogErrorf("read emojis conf.json failed: %s", err)

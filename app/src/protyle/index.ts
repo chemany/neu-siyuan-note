@@ -122,6 +122,11 @@ export class Protyle {
         }
 
         this.init();
+        
+        // ✅ 将 Protyle 实例绑定到 DOM 元素,以便前端可以访问
+        // 这对于编辑器功能正常工作至关重要
+        (this.protyle.element as any).protyle = this;
+        
         if (!mergedOptions.action.includes(Constants.CB_GET_HISTORY)) {
             this.protyle.ws = new Model({
                 app,

@@ -149,7 +149,7 @@ func ListNotebooks(ctx *WorkspaceContext) (ret []*Box, err error) {
 
 		if !isExistConf {
 			// Automatically create notebook conf.json if not found it https://github.com/siyuan-note/siyuan/issues/9647
-			box.SaveConf(boxConf)
+			box.SaveConfWithDataDir(dataDir, boxConf)
 			box.Unindex()
 			logging.LogWarnf("fixed a corrupted box [%s]", boxDirPath)
 		}
@@ -184,9 +184,14 @@ func ListNotebooks(ctx *WorkspaceContext) (ret []*Box, err error) {
 }
 
 func (box *Box) GetConf() (ret *conf.BoxConf) {
+	return box.GetConfWithDataDir(util.DataDir)
+}
+
+// GetConfWithDataDir 使用指定的 dataDir 读取笔记本配置
+func (box *Box) GetConfWithDataDir(dataDir string) (ret *conf.BoxConf) {
 	ret = conf.NewBoxConf()
 
-	confPath := filepath.Join(util.DataDir, box.ID, ".siyuan/conf.json")
+	confPath := filepath.Join(dataDir, box.ID, ".siyuan/conf.json")
 	if !filelock.IsExist(confPath) {
 		return
 	}
@@ -212,7 +217,12 @@ func (box *Box) GetConf() (ret *conf.BoxConf) {
 }
 
 func (box *Box) SaveConf(conf *conf.BoxConf) {
-	confPath := filepath.Join(util.DataDir, box.ID, ".siyuan/conf.json")
+	box.SaveConfWithDataDir(util.DataDir, conf)
+}
+
+// SaveConfWithDataDir 使用指定的 dataDir 保存笔记本配置
+func (box *Box) SaveConfWithDataDir(dataDir string, conf *conf.BoxConf) {
+	confPath := filepath.Join(dataDir, box.ID, ".siyuan/conf.json")
 	newData, err := gulu.JSON.MarshalIndentJSON(conf, "", "  ")
 	if err != nil {
 		logging.LogErrorf("marshal box conf [%s] failed: %s", confPath, err)
@@ -221,7 +231,7 @@ func (box *Box) SaveConf(conf *conf.BoxConf) {
 
 	oldData, err := filelock.ReadFile(confPath)
 	if err != nil {
-		box.saveConf0(newData)
+		box.saveConf0WithDataDir(dataDir, newData)
 		return
 	}
 
@@ -229,12 +239,17 @@ func (box *Box) SaveConf(conf *conf.BoxConf) {
 		return
 	}
 
-	box.saveConf0(newData)
+	box.saveConf0WithDataDir(dataDir, newData)
 }
 
 func (box *Box) saveConf0(data []byte) {
-	confPath := filepath.Join(util.DataDir, box.ID, ".siyuan/conf.json")
-	if err := os.MkdirAll(filepath.Join(util.DataDir, box.ID, ".siyuan"), 0755); err != nil {
+	box.saveConf0WithDataDir(util.DataDir, data)
+}
+
+// saveConf0WithDataDir 使用指定的 dataDir 保存笔记本配置（内部实现）
+func (box *Box) saveConf0WithDataDir(dataDir string, data []byte) {
+	confPath := filepath.Join(dataDir, box.ID, ".siyuan/conf.json")
+	if err := os.MkdirAll(filepath.Join(dataDir, box.ID, ".siyuan"), 0755); err != nil {
 		logging.LogErrorf("save box conf [%s] failed: %s", confPath, err)
 	}
 	if err := filelock.WriteFile(confPath, data); err != nil {
@@ -245,7 +260,12 @@ func (box *Box) saveConf0(data []byte) {
 }
 
 func (box *Box) Ls(p string) (ret []*FileInfo, totals int, err error) {
-	boxLocalPath := filepath.Join(util.DataDir, box.ID)
+	return box.LsWithDataDir(util.DataDir, p)
+}
+
+// LsWithDataDir 使用指定的 dataDir 列出目录内容
+func (box *Box) LsWithDataDir(dataDir, p string) (ret []*FileInfo, totals int, err error) {
+	boxLocalPath := filepath.Join(dataDir, box.ID)
 	if strings.HasSuffix(p, ".sy") {
 		dir := strings.TrimSuffix(p, ".sy")
 		absDir := filepath.Join(boxLocalPath, dir)
@@ -256,7 +276,7 @@ func (box *Box) Ls(p string) (ret []*FileInfo, totals int, err error) {
 		}
 	}
 
-	entries, err := os.ReadDir(filepath.Join(util.DataDir, box.ID, p))
+	entries, err := os.ReadDir(filepath.Join(dataDir, box.ID, p))
 	if err != nil {
 		return
 	}
@@ -274,7 +294,7 @@ func (box *Box) Ls(p string) (ret []*FileInfo, totals int, err error) {
 		}
 		if strings.HasSuffix(name, ".tmp") {
 			// 移除写入失败时产生的并且早于 30 分钟前的临时文件，近期创建的临时文件可能正在写入中
-			removePath := filepath.Join(util.DataDir, box.ID, p, name)
+			removePath := filepath.Join(dataDir, box.ID, p, name)
 			if info.ModTime().Before(time.Now().Add(-30 * time.Minute)) {
 				if removeErr := os.Remove(removePath); nil != removeErr {
 					logging.LogWarnf("remove tmp file [%s] failed: %s", removePath, removeErr)
@@ -331,7 +351,11 @@ func (box *Box) Mkdir(path string) error {
 }
 
 func (box *Box) MkdirAll(path string) error {
-	if err := os.MkdirAll(filepath.Join(util.DataDir, box.ID, path), 0755); err != nil {
+	return box.MkdirAllWithContext(GetDefaultWorkspaceContext(), path)
+}
+
+func (box *Box) MkdirAllWithContext(ctx *WorkspaceContext, path string) error {
+	if err := os.MkdirAll(filepath.Join(ctx.GetDataDir(), box.ID, path), 0755); err != nil {
 		msg := fmt.Sprintf(Conf.Language(6), box.Name, path, err)
 		logging.LogErrorf("mkdir all [path=%s] in box [%s] failed: %s", path, box.ID, err)
 		return errors.New(msg)
@@ -362,7 +386,13 @@ func (box *Box) Move(oldPath, newPath string) error {
 }
 
 func (box *Box) Remove(path string) error {
-	boxLocalPath := filepath.Join(util.DataDir, box.ID)
+	return box.RemoveWithContext(GetDefaultWorkspaceContext(), path)
+}
+
+// RemoveWithContext 使用 WorkspaceContext 删除文件
+func (box *Box) RemoveWithContext(ctx *WorkspaceContext, path string) error {
+	dataDir := ctx.GetDataDir()
+	boxLocalPath := filepath.Join(dataDir, box.ID)
 	filePath := filepath.Join(boxLocalPath, path)
 	if err := filelock.Remove(filePath); err != nil {
 		msg := fmt.Sprintf(Conf.Language(7), box.Name, path, err)
@@ -730,6 +760,10 @@ func FullReindex() {
 }
 
 func fullReindex() {
+	FullReindexWithContext(GetDefaultWorkspaceContext())
+}
+
+func FullReindexWithContext(ctx *WorkspaceContext) {
 	pushSQLInsertBlocksFTSMsg, pushSQLDeleteBlocksMsg = true, true
 	defer func() {
 		sql.FlushQueue()
@@ -741,15 +775,19 @@ func fullReindex() {
 
 	FlushTxQueue()
 
-	if err := sql.InitDatabase(true); err != nil {
-		os.Exit(logging.ExitCodeReadOnlyDatabase)
-		return
+	// 不要调用 sql.InitDatabase(true),因为这会重新初始化全局数据库
+	// 相反,我们只清空当前用户的数据并重新索引
+	sql.ClearQueue()
+	
+	// 清空当前用户的块树缓存
+	openedBoxes := Conf.GetOpenedBoxesWithContext(ctx)
+	for _, openedBox := range openedBoxes {
+		treenode.RemoveBlockTreesByBoxID(openedBox.ID)
 	}
 
 	sql.IndexIgnoreCached = false
-	openedBoxes := Conf.GetOpenedBoxes()
 	for _, openedBox := range openedBoxes {
-		indexBox(openedBox.ID)
+		indexBoxWithContext(ctx, openedBox.ID)
 	}
 	LoadFlashcards()
 	debug.FreeOSMemory()

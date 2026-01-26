@@ -41,21 +41,34 @@ type Task struct {
 	Async   bool // 为 true 说明是异步任务，不会阻塞任务队列，满足 Delay 条件后立即执行
 	Delay   time.Duration
 	Timeout time.Duration
+	Context interface{} // WorkspaceContext，用于多用户架构
 }
 
 func AppendTask(action string, handler interface{}, args ...interface{}) {
-	appendTaskWithDelayTimeout(action, false, 0, 24*time.Hour, handler, args...)
+	appendTaskWithDelayTimeout(action, false, 0, 24*time.Hour, nil, handler, args...)
+}
+
+func AppendTaskWithContext(action string, ctx interface{}, handler interface{}, args ...interface{}) {
+	appendTaskWithDelayTimeout(action, false, 0, 24*time.Hour, ctx, handler, args...)
 }
 
 func AppendAsyncTaskWithDelay(action string, delay time.Duration, handler interface{}, args ...interface{}) {
-	appendTaskWithDelayTimeout(action, true, delay, 24*time.Hour, handler, args...)
+	appendTaskWithDelayTimeout(action, true, delay, 24*time.Hour, nil, handler, args...)
+}
+
+func AppendAsyncTaskWithDelayAndContext(action string, delay time.Duration, ctx interface{}, handler interface{}, args ...interface{}) {
+	appendTaskWithDelayTimeout(action, true, delay, 24*time.Hour, ctx, handler, args...)
 }
 
 func AppendTaskWithTimeout(action string, timeout time.Duration, handler interface{}, args ...interface{}) {
-	appendTaskWithDelayTimeout(action, false, 0, timeout, handler, args...)
+	appendTaskWithDelayTimeout(action, false, 0, timeout, nil, handler, args...)
 }
 
-func appendTaskWithDelayTimeout(action string, async bool, delay, timeout time.Duration, handler interface{}, args ...interface{}) {
+func AppendTaskWithTimeoutAndContext(action string, timeout time.Duration, ctx interface{}, handler interface{}, args ...interface{}) {
+	appendTaskWithDelayTimeout(action, false, 0, timeout, ctx, handler, args...)
+}
+
+func appendTaskWithDelayTimeout(action string, async bool, delay, timeout time.Duration, ctx interface{}, handler interface{}, args ...interface{}) {
 	if util.IsExiting.Load() {
 		//logging.LogWarnf("task queue is paused, action [%s] will be ignored", action)
 		return
@@ -69,6 +82,7 @@ func appendTaskWithDelayTimeout(action string, async bool, delay, timeout time.D
 		Async:   async,
 		Delay:   delay,
 		Timeout: timeout,
+		Context: ctx, // 保存 WorkspaceContext
 	}
 
 	if gulu.Str.Contains(action, uniqueActions) {
@@ -337,12 +351,28 @@ func execTask(task *Task) {
 
 	defer logging.Recover()
 
-	args := make([]reflect.Value, len(task.Args))
-	for i, v := range task.Args {
-		if nil == v {
-			args[i] = reflect.New(task.Handler.Type().In(i)).Elem()
-		} else {
-			args[i] = reflect.ValueOf(v)
+	// 如果任务有 Context,将其作为第一个参数
+	var args []reflect.Value
+	if nil != task.Context {
+		// Context 作为第一个参数
+		args = make([]reflect.Value, len(task.Args)+1)
+		args[0] = reflect.ValueOf(task.Context)
+		for i, v := range task.Args {
+			if nil == v {
+				args[i+1] = reflect.New(task.Handler.Type().In(i+1)).Elem()
+			} else {
+				args[i+1] = reflect.ValueOf(v)
+			}
+		}
+	} else {
+		// 没有 Context,使用原有逻辑
+		args = make([]reflect.Value, len(task.Args))
+		for i, v := range task.Args {
+			if nil == v {
+				args[i] = reflect.New(task.Handler.Type().In(i)).Elem()
+			} else {
+				args[i] = reflect.ValueOf(v)
+			}
 		}
 	}
 

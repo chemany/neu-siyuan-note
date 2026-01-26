@@ -718,6 +718,10 @@ func uploadAssets2Cloud(assetPaths []string, bizType string) (count int, err err
 }
 
 func RemoveUnusedAssets() (ret []string) {
+	return RemoveUnusedAssetsWithContext(GetDefaultWorkspaceContext())
+}
+
+func RemoveUnusedAssetsWithContext(ctx *WorkspaceContext) (ret []string) {
 	ret = []string{}
 	var size int64
 
@@ -727,9 +731,16 @@ func RemoveUnusedAssets() (ret []string) {
 		util.PushUpdateMsg(msgId, msg, 7000)
 	}()
 
-	unusedAssets := UnusedAssets()
+	// 临时切换到用户的 DataDir
+	originalDataDir := util.DataDir
+	util.DataDir = ctx.DataDir
+	defer func() {
+		util.DataDir = originalDataDir
+	}()
 
-	historyDir, err := GetHistoryDir(HistoryOpClean)
+	unusedAssets := UnusedAssetsWithContext(ctx)
+
+	historyDir, err := GetHistoryDirWithContext(ctx, HistoryOpClean)
 	if err != nil {
 		logging.LogErrorf("get history dir failed: %s", err)
 		return
@@ -738,7 +749,7 @@ func RemoveUnusedAssets() (ret []string) {
 	var hashes []string
 	for _, p := range unusedAssets {
 		historyPath := filepath.Join(historyDir, p)
-		if p = filepath.Join(util.DataDir, p); filelock.IsExist(p) {
+		if p = filepath.Join(ctx.DataDir, p); filelock.IsExist(p) {
 			if filelock.IsHidden(p) {
 				continue
 			}
@@ -756,7 +767,7 @@ func RemoveUnusedAssets() (ret []string) {
 	sql.BatchRemoveAssetsQueue(hashes)
 
 	for _, unusedAsset := range unusedAssets {
-		absPath := filepath.Join(util.DataDir, unusedAsset)
+		absPath := filepath.Join(ctx.DataDir, unusedAsset)
 		if filelock.IsExist(absPath) {
 			info, statErr := os.Stat(absPath)
 			if statErr == nil {
@@ -781,7 +792,7 @@ func RemoveUnusedAssets() (ret []string) {
 		ret = append(ret, absPath)
 	}
 	if 0 < len(ret) {
-		IncSync()
+		IncSyncWithContext(ctx)
 	}
 
 	indexHistoryDir(filepath.Base(historyDir), util.NewLute())
@@ -790,18 +801,29 @@ func RemoveUnusedAssets() (ret []string) {
 }
 
 func RemoveUnusedAsset(p string) (ret string) {
-	absPath := filepath.Join(util.DataDir, p)
+	return RemoveUnusedAssetWithContext(GetDefaultWorkspaceContext(), p)
+}
+
+func RemoveUnusedAssetWithContext(ctx *WorkspaceContext, p string) (ret string) {
+	// 临时切换到用户的 DataDir
+	originalDataDir := util.DataDir
+	util.DataDir = ctx.DataDir
+	defer func() {
+		util.DataDir = originalDataDir
+	}()
+
+	absPath := filepath.Join(ctx.DataDir, p)
 	if !filelock.IsExist(absPath) {
 		return absPath
 	}
 
-	historyDir, err := GetHistoryDir(HistoryOpClean)
+	historyDir, err := GetHistoryDirWithContext(ctx, HistoryOpClean)
 	if err != nil {
 		logging.LogErrorf("get history dir failed: %s", err)
 		return
 	}
 
-	newP := strings.TrimPrefix(absPath, util.DataDir)
+	newP := strings.TrimPrefix(absPath, ctx.DataDir)
 	historyPath := filepath.Join(historyDir, newP)
 	if filelock.IsExist(absPath) {
 		if err = filelock.Copy(absPath, historyPath); err != nil {
@@ -824,7 +846,7 @@ func RemoveUnusedAsset(p string) (ret string) {
 
 	util.RemoveAssetText(p)
 
-	IncSync()
+	IncSyncWithContext(ctx)
 
 	indexHistoryDir(filepath.Base(historyDir), util.NewLute())
 	cache.RemoveAsset(p)
@@ -994,15 +1016,26 @@ func RenameAsset(oldPath, newName string) (newPath string, err error) {
 }
 
 func UnusedAssets() (ret []string) {
+	return UnusedAssetsWithContext(GetDefaultWorkspaceContext())
+}
+
+func UnusedAssetsWithContext(ctx *WorkspaceContext) (ret []string) {
 	defer logging.Recover()
 	ret = []string{}
+
+	// 临时切换到用户的 DataDir
+	oldDataDir := util.DataDir
+	util.DataDir = ctx.GetDataDir()
+	defer func() {
+		util.DataDir = oldDataDir
+	}()
 
 	assetsPathMap, err := allAssetAbsPaths()
 	if err != nil {
 		return
 	}
 	linkDestMap := map[string]bool{}
-	notebooks, err := ListNotebooks(GetDefaultWorkspaceContext())
+	notebooks, err := ListNotebooks(ctx)
 	if err != nil {
 		return
 	}
@@ -1011,7 +1044,7 @@ func UnusedAssets() (ret []string) {
 		dests := map[string]bool{}
 
 		// 分页加载，优化清理未引用资源内存占用 https://github.com/siyuan-note/siyuan/issues/5200
-		pages := pagedPaths(filepath.Join(util.DataDir, notebook.ID), 32)
+		pages := pagedPaths(filepath.Join(ctx.GetDataDir(), notebook.ID), 32)
 		for _, paths := range pages {
 			var trees []*parse.Tree
 			for _, localPath := range paths {

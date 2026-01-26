@@ -17,6 +17,7 @@
 package api
 
 import (
+	"database/sql"
 	"errors"
 	"net/http"
 
@@ -199,7 +200,21 @@ func unfoldBlock(c *gin.Context) {
 		return
 	}
 
-	bt := treenode.GetBlockTree(id)
+	// 获取 WorkspaceContext 和用户数据库
+	ctx := model.GetWorkspaceContext(c)
+	var userDB *sql.DB
+	if ctx.IsWebMode() {
+		userDB, _ = treenode.GetBlockTreeDBManager().GetOrCreateDB(ctx.BlockTreeDBPath)
+	}
+
+	// 使用用户数据库查询
+	var bt *treenode.BlockTree
+	if nil != userDB {
+		bt = treenode.GetBlockTreeWithDB(id, userDB)
+	} else {
+		bt = treenode.GetBlockTree(id)
+	}
+
 	if nil == bt {
 		ret.Code = -1
 		ret.Msg = "block tree not found [id=" + id + "]"
@@ -259,7 +274,21 @@ func foldBlock(c *gin.Context) {
 		return
 	}
 
-	bt := treenode.GetBlockTree(id)
+	// 获取 WorkspaceContext 和用户数据库
+	ctx := model.GetWorkspaceContext(c)
+	var userDB *sql.DB
+	if ctx.IsWebMode() {
+		userDB, _ = treenode.GetBlockTreeDBManager().GetOrCreateDB(ctx.BlockTreeDBPath)
+	}
+
+	// 使用用户数据库查询
+	var bt *treenode.BlockTree
+	if nil != userDB {
+		bt = treenode.GetBlockTreeWithDB(id, userDB)
+	} else {
+		bt = treenode.GetBlockTree(id)
+	}
+
 	if nil == bt {
 		ret.Code = -1
 		ret.Msg = "block tree not found [id=" + id + "]"
@@ -319,7 +348,21 @@ func moveBlock(c *gin.Context) {
 		return
 	}
 
-	currentBt := treenode.GetBlockTree(id)
+	// 获取 WorkspaceContext 和用户数据库
+	ctx := model.GetWorkspaceContext(c)
+	var userDB *sql.DB
+	if ctx.IsWebMode() {
+		userDB, _ = treenode.GetBlockTreeDBManager().GetOrCreateDB(ctx.BlockTreeDBPath)
+	}
+
+	// 使用用户数据库查询当前块
+	var currentBt *treenode.BlockTree
+	if nil != userDB {
+		currentBt = treenode.GetBlockTreeWithDB(id, userDB)
+	} else {
+		currentBt = treenode.GetBlockTree(id)
+	}
+
 	if nil == currentBt {
 		ret.Code = -1
 		ret.Msg = "block not found [id=" + id + "]"
@@ -340,7 +383,13 @@ func moveBlock(c *gin.Context) {
 		}
 
 		// Check the validity of the API `moveBlock` parameter `previousID` https://github.com/siyuan-note/siyuan/issues/8007
-		if bt := treenode.GetBlockTree(previousID); nil == bt || "d" == bt.Type {
+		var bt *treenode.BlockTree
+		if nil != userDB {
+			bt = treenode.GetBlockTreeWithDB(previousID, userDB)
+		} else {
+			bt = treenode.GetBlockTree(previousID)
+		}
+		if nil == bt || "d" == bt.Type {
 			ret.Code = -1
 			ret.Msg = "`previousID` can not be the ID of a document"
 			return
@@ -349,9 +398,17 @@ func moveBlock(c *gin.Context) {
 
 	var targetBt *treenode.BlockTree
 	if "" != previousID {
-		targetBt = treenode.GetBlockTree(previousID)
+		if nil != userDB {
+			targetBt = treenode.GetBlockTreeWithDB(previousID, userDB)
+		} else {
+			targetBt = treenode.GetBlockTree(previousID)
+		}
 	} else if "" != parentID {
-		targetBt = treenode.GetBlockTree(parentID)
+		if nil != userDB {
+			targetBt = treenode.GetBlockTreeWithDB(parentID, userDB)
+		} else {
+			targetBt = treenode.GetBlockTree(parentID)
+		}
 	}
 
 	if nil == targetBt {

@@ -30,6 +30,7 @@ import (
 	"github.com/88250/gulu"
 	"github.com/88250/lute/ast"
 	"github.com/gin-gonic/gin"
+	"github.com/siyuan-note/logging"
 	"github.com/siyuan-note/siyuan/kernel/filesys"
 	"github.com/siyuan-note/siyuan/kernel/model"
 	"github.com/siyuan-note/siyuan/kernel/util"
@@ -79,7 +80,9 @@ func moveLocalShorthands(c *gin.Context) {
 	}
 
 	model.FlushTxQueue()
-	box := model.Conf.Box(notebook)
+	// 使用 WorkspaceContext 获取笔记本
+	ctx := model.GetWorkspaceContext(c)
+	box := model.Conf.BoxWithContext(ctx, notebook)
 	for _, id := range ids {
 		b, _ := model.GetBlock(id, nil)
 		pushCreate(box, b.Path, arg)
@@ -272,7 +275,10 @@ func heading2Doc(c *gin.Context) {
 	if arg["previousPath"] != nil {
 		previousPath = arg["previousPath"].(string)
 	}
-	srcRootBlockID, targetPath, err := model.Heading2Doc(srcHeadingID, targetNotebook, targetPath, previousPath)
+	
+	// 获取 WorkspaceContext
+	ctx := model.GetWorkspaceContext(c)
+	srcRootBlockID, targetPath, err := model.Heading2DocWithContext(ctx, srcHeadingID, targetNotebook, targetPath, previousPath)
 	if err != nil {
 		ret.Code = -1
 		ret.Msg = err.Error()
@@ -312,7 +318,10 @@ func li2Doc(c *gin.Context) {
 	if arg["previousPath"] != nil {
 		previousPath = arg["previousPath"].(string)
 	}
-	srcRootBlockID, targetPath, err := model.ListItem2Doc(srcListItemID, targetNotebook, targetPath, previousPath)
+	
+	// 获取 WorkspaceContext
+	ctx := model.GetWorkspaceContext(c)
+	srcRootBlockID, targetPath, err := model.ListItem2DocWithContext(ctx, srcListItemID, targetNotebook, targetPath, previousPath)
 	if err != nil {
 		ret.Code = -1
 		ret.Msg = err.Error()
@@ -322,7 +331,7 @@ func li2Doc(c *gin.Context) {
 
 	model.FlushTxQueue()
 
-	box := model.Conf.Box(targetNotebook)
+	box := model.Conf.BoxWithContext(ctx, targetNotebook)
 	evt := util.NewCmdResult("li2doc", 0, util.PushModeBroadcast)
 	evt.Data = map[string]interface{}{
 		"box":            box,
@@ -349,7 +358,10 @@ func getHPathByPath(c *gin.Context) {
 
 	p := arg["path"].(string)
 
-	hPath, err := model.GetHPathByPath(notebook, p)
+	// 从 Gin Context 获取 WorkspaceContext
+	ctx := model.GetWorkspaceContext(c)
+
+	hPath, err := model.GetHPathByPathWithContext(ctx, notebook, p)
 	if err != nil {
 		ret.Code = -1
 		ret.Msg = err.Error()
@@ -502,7 +514,11 @@ func moveDocs(c *gin.Context) {
 		return
 	}
 	callback := arg["callback"]
-	err := model.MoveDocs(fromPaths, toNotebook, toPath, callback)
+
+	// 从 Gin Context 获取 WorkspaceContext
+	ctx := model.GetWorkspaceContext(c)
+
+	err := model.MoveDocsWithContext(ctx, fromPaths, toNotebook, toPath, callback)
 	if err != nil {
 		ret.Code = -1
 		ret.Msg = err.Error()
@@ -620,7 +636,11 @@ func removeDocByID(c *gin.Context) {
 		return
 	}
 
-	model.RemoveDoc(tree.Box, tree.Path)
+	// 获取 WorkspaceContext
+	ctx := model.GetWorkspaceContext(c)
+	
+	// 使用带 Context 的版本
+	model.RemoveDocWithContext(ctx, tree.Box, tree.Path)
 }
 
 func removeDocs(c *gin.Context) {
@@ -637,7 +657,11 @@ func removeDocs(c *gin.Context) {
 	for _, path := range pathsArg {
 		paths = append(paths, path.(string))
 	}
-	model.RemoveDocs(paths)
+
+	// 从 Gin Context 获取 WorkspaceContext
+	ctx := model.GetWorkspaceContext(c)
+
+	model.RemoveDocsWithContext(ctx, paths)
 }
 
 func renameDoc(c *gin.Context) {
@@ -745,6 +769,9 @@ func createDoc(c *gin.Context) {
 		return
 	}
 
+	// 获取 WorkspaceContext
+	ctx := model.GetWorkspaceContext(c)
+
 	notebook := arg["notebook"].(string)
 	p := arg["path"].(string)
 	title := arg["title"].(string)
@@ -757,7 +784,7 @@ func createDoc(c *gin.Context) {
 		}
 	}
 
-	tree, err := model.CreateDocByMd(notebook, p, title, md, sorts)
+	tree, err := model.CreateDocByMdWithContext(ctx, notebook, p, title, md, sorts)
 	if err != nil {
 		ret.Code = -1
 		ret.Msg = err.Error()
@@ -766,7 +793,8 @@ func createDoc(c *gin.Context) {
 	}
 
 	model.FlushTxQueue()
-	box := model.Conf.Box(notebook)
+	// 使用 WorkspaceContext 获取笔记本
+	box := model.Conf.BoxWithContext(ctx, notebook)
 	pushCreate(box, p, arg)
 
 	ret.Data = map[string]interface{}{
@@ -796,9 +824,11 @@ func createDailyNote(c *gin.Context) {
 	}
 
 	model.FlushTxQueue()
-	box := model.Conf.Box(notebook)
+	// 使用 WorkspaceContext 获取笔记本
+	ctx := model.GetWorkspaceContext(c)
+	box := model.Conf.BoxWithContext(ctx, notebook)
 	luteEngine := util.NewLute()
-	tree, err := filesys.LoadTree(box.ID, p, luteEngine)
+	tree, err := filesys.LoadTreeWithDataDir(ctx.GetDataDir(), box.ID, p, luteEngine)
 	if err != nil {
 		ret.Code = -1
 		ret.Msg = err.Error()
@@ -899,8 +929,12 @@ func createDocWithMd(c *gin.Context) {
 
 	model.FlushTxQueue()
 	box := model.Conf.Box(notebook)
-	b, _ := model.GetBlock(id, nil)
-	pushCreate(box, b.Path, arg)
+	b, _ := model.GetBlockWithContext(ctx, id, nil)
+	if nil != b {
+		pushCreate(box, b.Path, arg)
+	} else {
+		logging.LogWarnf("block [%s] not found after creation, skipping pushCreate", id)
+	}
 }
 
 func getDocCreateSavePath(c *gin.Context) {

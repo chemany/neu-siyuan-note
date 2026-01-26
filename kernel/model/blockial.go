@@ -29,7 +29,6 @@ import (
 	"github.com/88250/lute/parse"
 	"github.com/araddon/dateparse"
 	"github.com/siyuan-note/siyuan/kernel/cache"
-	"github.com/siyuan-note/siyuan/kernel/filesys"
 	"github.com/siyuan-note/siyuan/kernel/sql"
 	"github.com/siyuan-note/siyuan/kernel/treenode"
 	"github.com/siyuan-note/siyuan/kernel/util"
@@ -99,6 +98,11 @@ func SetBlockReminder(id string, timed string) (err error) {
 }
 
 func BatchSetBlockAttrs(blockAttrs []map[string]interface{}) (err error) {
+	return BatchSetBlockAttrsWithContext(GetDefaultWorkspaceContext(), blockAttrs)
+}
+
+// BatchSetBlockAttrsWithContext 使用 WorkspaceContext 批量设置块属性
+func BatchSetBlockAttrsWithContext(ctx *WorkspaceContext, blockAttrs []map[string]interface{}) (err error) {
 	if util.ReadOnly {
 		return
 	}
@@ -110,7 +114,7 @@ func BatchSetBlockAttrs(blockAttrs []map[string]interface{}) (err error) {
 		blockIDs = append(blockIDs, blockAttr["id"].(string))
 	}
 
-	trees := filesys.LoadTrees(blockIDs)
+	trees := LoadTreesWithContext(ctx, blockIDs)
 	var nodes []*ast.Node
 	for _, blockAttr := range blockAttrs {
 		id := blockAttr["id"].(string)

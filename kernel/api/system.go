@@ -30,8 +30,11 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/siyuan-note/filelock"
 	"github.com/siyuan-note/logging"
+	"github.com/siyuan-note/siyuan/kernel/cache"
 	"github.com/siyuan-note/siyuan/kernel/conf"
 	"github.com/siyuan-note/siyuan/kernel/model"
+	"github.com/siyuan-note/siyuan/kernel/sql"
+	"github.com/siyuan-note/siyuan/kernel/task"
 	"github.com/siyuan-note/siyuan/kernel/util"
 )
 
@@ -46,7 +49,24 @@ func rebuildDataIndex(c *gin.Context) {
 	ret := gulu.Ret.NewResult()
 	defer c.JSON(http.StatusOK, ret)
 
-	model.FullReindex()
+	// 获取用户的 WorkspaceContext
+	ctx := model.GetWorkspaceContext(c)
+	
+	// 使用带 Context 的重建索引
+	task.AppendTaskWithContext(task.DatabaseIndexFull, ctx, func(ctx *model.WorkspaceContext) {
+		model.FullReindexWithContext(ctx)
+	})
+	task.AppendTaskWithContext(task.DatabaseIndexRef, ctx, func(ctx *model.WorkspaceContext) {
+		model.IndexRefsWithContext(ctx)
+	})
+	go func() {
+		sql.FlushQueue()
+		model.ResetVirtualBlockRefCache()
+	}()
+	task.AppendTaskWithTimeout(task.DatabaseIndexEmbedBlock, 30*time.Second, model.IndexEmbedBlockJob)
+	cache.ClearDocsIAL()
+	cache.ClearBlocksIAL()
+	task.AppendTask(task.ReloadUI, util.ReloadUI)
 }
 
 func addMicrosoftDefenderExclusion(c *gin.Context) {
@@ -147,7 +167,9 @@ func getEmojiConf(c *gin.Context) {
 	ret := gulu.Ret.NewResult()
 	defer c.JSON(http.StatusOK, ret)
 
-	builtConfPath := filepath.Join(util.AppearancePath, "emojis", "conf.json")
+	// emojis 配置是系统级别的共享资源，从应用程序目录读取
+	// 所有用户共享同一套 emojis 配置
+	builtConfPath := filepath.Join(util.WorkingDir, "appearance", "emojis", "conf.json")
 	data, err := os.ReadFile(builtConfPath)
 	if err != nil {
 		logging.LogErrorf("read emojis conf.json failed: %s", err)
@@ -164,7 +186,11 @@ func getEmojiConf(c *gin.Context) {
 		return
 	}
 
-	customConfDir := filepath.Join(util.DataDir, "emojis")
+	// 获取用户的 WorkspaceContext
+	ctx := model.GetWorkspaceContext(c)
+	
+	// 使用用户特定的 DataDir 读取自定义 emojis
+	customConfDir := filepath.Join(ctx.GetDataDir(), "emojis")
 	custom := map[string]interface{}{
 		"id":          "custom",
 		"title":       "Custom",

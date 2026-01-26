@@ -17,6 +17,7 @@
 package model
 
 import (
+	sql2 "database/sql"
 	"os"
 	"path/filepath"
 	"sort"
@@ -30,7 +31,6 @@ import (
 	"github.com/emirpasic/gods/sets/hashset"
 	"github.com/siyuan-note/logging"
 	"github.com/siyuan-note/siyuan/kernel/av"
-	"github.com/siyuan-note/siyuan/kernel/filesys"
 	"github.com/siyuan-note/siyuan/kernel/sql"
 	"github.com/siyuan-note/siyuan/kernel/treenode"
 	"github.com/siyuan-note/siyuan/kernel/util"
@@ -67,6 +67,17 @@ func GetDocInfoWithContext(ctx *WorkspaceContext, blockID string) (ret *BlockInf
 		return
 	}
 
+	// 获取用户特定的 BlockTree 数据库
+	var userDB *sql2.DB
+	if ctx.IsWebMode() {
+		var dbErr error
+		userDB, dbErr = treenode.GetBlockTreeDBManager().GetOrCreateDB(ctx.BlockTreeDBPath)
+		if nil != dbErr {
+			logging.LogErrorf("get or create BlockTree database [%s] failed: %s, falling back to global database", ctx.BlockTreeDBPath, dbErr)
+			userDB = nil
+		}
+	}
+
 	title := tree.Root.IALAttr("title")
 	ret = &BlockInfo{ID: blockID, RootID: tree.Root.ID, Name: title}
 	ret.IAL = parse.IAL2Map(tree.Root.KramdownIAL)
@@ -96,7 +107,12 @@ func GetDocInfoWithContext(ctx *WorkspaceContext, blockID string) (ret *BlockInf
 		}
 	}
 
-	bt := treenode.GetBlockTree(blockID)
+	var bt *treenode.BlockTree
+	if nil != userDB {
+		bt = treenode.GetBlockTreeWithDB(blockID, userDB)
+	} else {
+		bt = treenode.GetBlockTree(blockID)
+	}
 	refDefs := queryBlockRefDefs(bt)
 	buildBacklinkListItemRefs(refDefs)
 	var refIDs []string
@@ -141,9 +157,14 @@ func GetDocInfoWithContext(ctx *WorkspaceContext, blockID string) (ret *BlockInf
 }
 
 func GetDocsInfo(blockIDs []string, queryRefCount bool, queryAv bool) (rets []*BlockInfo) {
+	return GetDocsInfoWithContext(GetDefaultWorkspaceContext(), blockIDs, queryRefCount, queryAv)
+}
+
+// GetDocsInfoWithContext 使用 WorkspaceContext 获取文档信息
+func GetDocsInfoWithContext(ctx *WorkspaceContext, blockIDs []string, queryRefCount bool, queryAv bool) (rets []*BlockInfo) {
 	FlushTxQueue()
 
-	trees := filesys.LoadTrees(blockIDs)
+	trees := LoadTreesWithContext(ctx, blockIDs)
 	bts := treenode.GetBlockTrees(blockIDs)
 	for _, blockID := range blockIDs {
 		tree := trees[blockID]
@@ -211,7 +232,7 @@ func GetDocsInfo(blockIDs []string, queryRefCount bool, queryAv bool) (rets []*B
 		}
 
 		var subFileCount int
-		boxLocalPath := filepath.Join(util.DataDir, tree.Box)
+		boxLocalPath := filepath.Join(ctx.GetDataDir(), tree.Box)
 		subFiles, err := os.ReadDir(filepath.Join(boxLocalPath, strings.TrimSuffix(tree.Path, ".sy")))
 		if err == nil {
 			for _, subFile := range subFiles {

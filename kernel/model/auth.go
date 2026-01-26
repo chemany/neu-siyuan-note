@@ -55,6 +55,7 @@ var (
 	sessionLock = sync.Mutex{}
 
 	jwtKey = make([]byte, 32)
+	unifiedAuthJWTKey = []byte("unified-settings-super-secret-key-2024") // 统一认证服务的JWT密钥
 )
 
 func GetBasicAuthAccount(username string) *Account {
@@ -126,7 +127,8 @@ func InitJWT() {
 
 func ParseJWT(tokenString string) (*jwt.Token, error) {
 	// REF: https://golang-jwt.github.io/jwt/usage/parse/
-	return jwt.Parse(
+	// 首先尝试使用灵枢笔记自己的密钥解析
+	token, err := jwt.Parse(
 		tokenString,
 		func(token *jwt.Token) (interface{}, error) {
 			return jwtKey, nil
@@ -135,6 +137,20 @@ func ParseJWT(tokenString string) (*jwt.Token, error) {
 		jwt.WithSubject(sub),
 		jwt.WithAudience(aud),
 	)
+	
+	if err == nil {
+		return token, nil
+	}
+	
+	// 如果失败，尝试使用统一认证服务的密钥解析（不验证 issuer/subject/audience）
+	token, err = jwt.Parse(
+		tokenString,
+		func(token *jwt.Token) (interface{}, error) {
+			return unifiedAuthJWTKey, nil
+		},
+	)
+	
+	return token, err
 }
 
 func ParseXAuthToken(r *http.Request) *jwt.Token {
@@ -180,7 +196,15 @@ func GetTokenClaims(token *jwt.Token) jwt.MapClaims {
 
 func GetClaimRole(claims jwt.MapClaims) Role {
 	if role := claims[ClaimsKeyRole]; role != nil {
-		return Role(role.(float64))
+		// 尝试转换为 float64（灵枢笔记 token）
+		if roleFloat, ok := role.(float64); ok {
+			return Role(roleFloat)
+		}
+		// 如果是字符串（统一认证 token），返回默认角色
+		if _, ok := role.(string); ok {
+			// 统一认证 token 的 role 是字符串，默认给予管理员权限
+			return RoleAdministrator
+		}
 	}
 	return RoleVisitor
 }

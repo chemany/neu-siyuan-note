@@ -17,12 +17,13 @@
 package api
 
 import (
+	"database/sql"
 	"net/http"
 
 	"github.com/88250/gulu"
 	"github.com/gin-gonic/gin"
 	"github.com/siyuan-note/siyuan/kernel/model"
-	"github.com/siyuan-note/siyuan/kernel/sql"
+	sql2 "github.com/siyuan-note/siyuan/kernel/sql"
 	"github.com/siyuan-note/siyuan/kernel/treenode"
 	"github.com/siyuan-note/siyuan/kernel/util"
 )
@@ -49,7 +50,8 @@ func batchGetBlockAttrs(c *gin.Context) {
 		idList = append(idList, id.(string))
 	}
 
-	ret.Data = sql.BatchGetBlockAttrs(idList)
+	ctx := model.GetWorkspaceContext(c)
+	ret.Data = sql2.BatchGetBlockAttrsWithDataDir(ctx.GetDataDir(), idList)
 }
 
 func getBlockAttrs(c *gin.Context) {
@@ -66,7 +68,7 @@ func getBlockAttrs(c *gin.Context) {
 		return
 	}
 
-	ret.Data = sql.GetBlockAttrs(id)
+	ret.Data = sql2.GetBlockAttrs(id)
 }
 
 func setBlockAttrs(c *gin.Context) {
@@ -86,7 +88,22 @@ func setBlockAttrs(c *gin.Context) {
 	attrs := arg["attrs"].(map[string]interface{})
 	if 1 == len(attrs) && "" != attrs["scroll"] {
 		// 不记录用户指南滚动位置
-		if b := treenode.GetBlockTree(id); nil != b && (model.IsUserGuide(b.BoxID)) {
+		// 获取 WorkspaceContext 和用户数据库
+		ctx := model.GetWorkspaceContext(c)
+		var userDB *sql.DB
+		if ctx.IsWebMode() {
+			userDB, _ = treenode.GetBlockTreeDBManager().GetOrCreateDB(ctx.BlockTreeDBPath)
+		}
+
+		// 使用用户数据库查询
+		var b *treenode.BlockTree
+		if nil != userDB {
+			b = treenode.GetBlockTreeWithDB(id, userDB)
+		} else {
+			b = treenode.GetBlockTree(id)
+		}
+
+		if nil != b && (model.IsUserGuide(b.BoxID)) {
 			attrs["scroll"] = ""
 		}
 	}
@@ -116,6 +133,9 @@ func batchSetBlockAttrs(c *gin.Context) {
 		return
 	}
 
+	// 获取 WorkspaceContext
+	ctx := model.GetWorkspaceContext(c)
+
 	blockAttrsArg := arg["blockAttrs"].([]interface{})
 	var blockAttrs []map[string]interface{}
 	for _, blockAttrArg := range blockAttrsArg {
@@ -141,7 +161,8 @@ func batchSetBlockAttrs(c *gin.Context) {
 		})
 	}
 
-	err := model.BatchSetBlockAttrs(blockAttrs)
+	// 使用带 Context 的版本
+	err := model.BatchSetBlockAttrsWithContext(ctx, blockAttrs)
 	if err != nil {
 		ret.Code = -1
 		ret.Msg = err.Error()

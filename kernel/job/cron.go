@@ -23,6 +23,7 @@ import (
 	"github.com/siyuan-note/siyuan/kernel/model"
 	"github.com/siyuan-note/siyuan/kernel/sql"
 	"github.com/siyuan-note/siyuan/kernel/task"
+	"github.com/siyuan-note/siyuan/kernel/treenode"
 	"github.com/siyuan-note/siyuan/kernel/util"
 )
 
@@ -45,6 +46,7 @@ func StartCron() {
 	go every(30*time.Second, model.HookDesktopUIProcJob)
 	go every(24*time.Hour, model.AutoPurgeRepoJob)
 	go every(30*time.Minute, model.AutoCheckMicrosoftDefenderJob)
+	go every(10*time.Minute, logBlockTreeConnectionPoolStats, "BlockTreeConnectionPoolStats")
 
 	// TODO: 移除旧方案 https://github.com/siyuan-note/siyuan/issues/14414 实现新的刷新机制
 	//go every(3*time.Second, model.WatchLocalShorthands)
@@ -73,4 +75,9 @@ func every(interval time.Duration, f func(), name ...string) {
 			}
 		}()
 	}
+}
+
+// logBlockTreeConnectionPoolStats 记录 BlockTree 连接池统计信息
+func logBlockTreeConnectionPoolStats() {
+	treenode.GetBlockTreeDBManager().LogStats()
 }

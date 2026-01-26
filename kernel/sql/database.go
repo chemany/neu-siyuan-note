@@ -41,16 +41,28 @@ import (
 	"github.com/88250/lute/parse"
 	"github.com/mattn/go-sqlite3"
 	_ "github.com/mattn/go-sqlite3"
+	"github.com/petermattis/goid"
 	"github.com/siyuan-note/eventbus"
 	"github.com/siyuan-note/logging"
 	"github.com/siyuan-note/siyuan/kernel/treenode"
 	"github.com/siyuan-note/siyuan/kernel/util"
 )
 
+// WorkspaceContextInterface 定义 WorkspaceContext 的接口
+// 避免循环依赖，sql 包不能直接导入 model 包
+type WorkspaceContextInterface interface {
+	GetDataDir() string
+	GetConfDir() string
+	GetWorkspaceDir() string
+}
+
 var (
 	db             *sql.DB
 	historyDB      *sql.DB
 	assetContentDB *sql.DB
+	
+	// goroutine-local Context 存储，用于多用户架构
+	contextMap = sync.Map{} // goroutineID -> WorkspaceContextInterface
 )
 
 func init() {
@@ -1040,7 +1052,7 @@ func deleteBlocksByIDs(tx *sql.Tx, ids []string) (err error) {
 }
 
 // deleteBlocksByIDsWithContext 使用 WorkspaceContext 删除块（带缓存清理）
-func deleteBlocksByIDsWithContext(ctx WorkspaceContext, tx *sql.Tx, ids []string) (err error) {
+func deleteBlocksByIDsWithContext(ctx WorkspaceContextInterface, tx *sql.Tx, ids []string) (err error) {
 	if 1 > len(ids) {
 		return
 	}
@@ -1323,16 +1335,32 @@ func batchUpdatePath(tx *sql.Tx, tree *parse.Tree, context map[string]interface{
 	if err = execStmtTx(tx, stmt, tree.Box, tree.Path, tree.HPath, ialContent, tree.ID); err != nil {
 		return
 	}
-	stmt = "UPDATE blocks_fts SET box = ?, path = ?, hpath = ?, ial = ? WHERE root_id = ?"
-	if err = execStmtTx(tx, stmt, tree.Box, tree.Path, tree.HPath, ialContent, tree.ID); err != nil {
-		return
-	}
-	if !caseSensitive {
-		stmt = "UPDATE blocks_fts_case_insensitive SET box = ?, path = ?, hpath = ?, ial = ? WHERE root_id = ?"
-		if err = execStmtTx(tx, stmt, tree.Box, tree.Path, tree.HPath, ialContent, tree.ID); err != nil {
-			return
+	
+	// 检查 FTS 表是否存在（在事务外检查，避免锁定）
+	var tableName string
+	checkStmt := "SELECT name FROM sqlite_master WHERE type='table' AND name='blocks_fts'"
+	checkErr := tx.QueryRow(checkStmt).Scan(&tableName)
+	
+	if checkErr == nil && tableName == "blocks_fts" {
+		// FTS 表存在，更新它
+		logging.LogInfof("FTS tables found, updating path for tree: %s", tree.ID)
+		
+		stmt = "UPDATE blocks_fts SET box = ?, path = ?, hpath = ?, ial = ? WHERE root_id = ?"
+		if updateErr := execStmtTx(tx, stmt, tree.Box, tree.Path, tree.HPath, ialContent, tree.ID); updateErr != nil {
+			logging.LogWarnf("update blocks_fts failed: %s", updateErr)
 		}
+		
+		if !caseSensitive {
+			stmt = "UPDATE blocks_fts_case_insensitive SET box = ?, path = ?, hpath = ?, ial = ? WHERE root_id = ?"
+			if updateErr := execStmtTx(tx, stmt, tree.Box, tree.Path, tree.HPath, ialContent, tree.ID); updateErr != nil {
+				logging.LogWarnf("update blocks_fts_case_insensitive failed: %s", updateErr)
+			}
+		}
+	} else {
+		// FTS 表不存在，跳过更新
+		logging.LogInfof("FTS tables not found (error: %v), skipping FTS update for tree: %s", checkErr, tree.ID)
 	}
+	
 	ClearCache()
 	evtHash := fmt.Sprintf("%x", sha256.Sum256([]byte(tree.ID)))[:7]
 	eventbus.Publish(eventbus.EvtSQLUpdateBlocksHPaths, context, 1, evtHash)
@@ -1345,16 +1373,30 @@ func batchUpdateHPath(tx *sql.Tx, tree *parse.Tree, context map[string]interface
 	if err = execStmtTx(tx, stmt, tree.HPath, ialContent, tree.ID); err != nil {
 		return
 	}
-	stmt = "UPDATE blocks_fts SET hpath = ?, ial = ? WHERE root_id = ?"
-	if err = execStmtTx(tx, stmt, tree.HPath, ialContent, tree.ID); err != nil {
-		return
-	}
-	if !caseSensitive {
-		stmt = "UPDATE blocks_fts_case_insensitive SET hpath = ?, ial = ? WHERE root_id = ?"
-		if err = execStmtTx(tx, stmt, tree.HPath, ialContent, tree.ID); err != nil {
-			return
+	
+	// 检查 FTS 表是否存在（在事务外检查，避免锁定）
+	var tableName string
+	checkStmt := "SELECT name FROM sqlite_master WHERE type='table' AND name='blocks_fts'"
+	checkErr := tx.QueryRow(checkStmt).Scan(&tableName)
+	
+	if checkErr == nil && tableName == "blocks_fts" {
+		// FTS 表存在，更新它
+		logging.LogInfof("FTS tables found, updating for tree: %s", tree.ID)
+		
+		stmt = "UPDATE blocks_fts SET hpath = ?, ial = ? WHERE root_id = ?"
+		if updateErr := execStmtTx(tx, stmt, tree.HPath, ialContent, tree.ID); updateErr != nil {
+			logging.LogWarnf("update blocks_fts failed: %s", updateErr)
 		}
+		
+		stmt = "UPDATE blocks_fts_case_insensitive SET hpath = ?, ial = ? WHERE root_id = ?"
+		if updateErr := execStmtTx(tx, stmt, tree.HPath, ialContent, tree.ID); updateErr != nil {
+			logging.LogWarnf("update blocks_fts_case_insensitive failed: %s", updateErr)
+		}
+	} else {
+		// FTS 表不存在，跳过更新
+		logging.LogInfof("FTS tables not found (error: %v), skipping FTS update for tree: %s", checkErr, tree.ID)
 	}
+	
 	ClearCache()
 	evtHash := fmt.Sprintf("%x", sha256.Sum256([]byte(tree.ID)))[:7]
 	eventbus.Publish(eventbus.EvtSQLUpdateBlocksHPaths, context, 1, evtHash)
@@ -1391,7 +1433,7 @@ func queryRow(query string, args ...interface{}) *sql.Row {
 }
 
 // queryRowWithContext 使用 WorkspaceContext 查询单行数据
-func queryRowWithContext(ctx WorkspaceContext, query string, args ...interface{}) *sql.Row {
+func queryRowWithContext(ctx WorkspaceContextInterface, query string, args ...interface{}) *sql.Row {
 	query = strings.TrimSpace(query)
 	if "" == query {
 		logging.LogErrorf("statement is empty")
@@ -1407,11 +1449,40 @@ func queryRowWithContext(ctx WorkspaceContext, query string, args ...interface{}
 	return database.QueryRow(query, args...)
 }
 
+// SetCurrentContext 设置当前 goroutine 的 WorkspaceContext
+// 用于多用户架构，让数据库查询使用正确的用户数据库
+func SetCurrentContext(ctx WorkspaceContextInterface) {
+	gid := goid.Get()
+	contextMap.Store(gid, ctx)
+}
+
+// ClearCurrentContext 清除当前 goroutine 的 WorkspaceContext
+func ClearCurrentContext() {
+	gid := goid.Get()
+	contextMap.Delete(gid)
+}
+
+// getCurrentContext 获取当前 goroutine 的 WorkspaceContext
+func getCurrentContext() (WorkspaceContextInterface, bool) {
+	gid := goid.Get()
+	if ctx, ok := contextMap.Load(gid); ok {
+		return ctx.(WorkspaceContextInterface), true
+	}
+	return nil, false
+}
+
 func query(query string, args ...interface{}) (*sql.Rows, error) {
 	query = strings.TrimSpace(query)
 	if "" == query {
 		return nil, errors.New("statement is empty")
 	}
+	
+	// 优先使用当前 goroutine 的 Context（多用户架构）
+	if ctx, ok := getCurrentContext(); ok {
+		return queryWithContext(ctx, query, args...)
+	}
+	
+	// 回退到全局连接（单用户模式或向后兼容）
 	if nil == db {
 		return nil, errors.New("database is nil")
 	}
@@ -1419,19 +1490,29 @@ func query(query string, args ...interface{}) (*sql.Rows, error) {
 }
 
 // queryWithContext 使用 WorkspaceContext 查询多行数据
-func queryWithContext(ctx WorkspaceContext, query string, args ...interface{}) (*sql.Rows, error) {
+func queryWithContext(ctx WorkspaceContextInterface, query string, args ...interface{}) (*sql.Rows, error) {
 	query = strings.TrimSpace(query)
 	if "" == query {
 		return nil, errors.New("statement is empty")
 	}
 	
+	logging.LogInfof("[DB] 开始查询，workspace: %s", ctx.GetWorkspaceDir())
+	
 	database, err := GetDBWithContext(ctx)
 	if err != nil {
-		logging.LogErrorf("get database failed: %s", err)
+		logging.LogErrorf("[DB] 获取数据库连接失败: %s", err)
 		return nil, err
 	}
 	
-	return database.Query(query, args...)
+	logging.LogInfof("[DB] 数据库连接已获取，执行查询...")
+	rows, err := database.Query(query, args...)
+	if err != nil {
+		logging.LogErrorf("[DB] 查询执行失败: %s", err)
+		return nil, err
+	}
+	
+	logging.LogInfof("[DB] 查询执行成功")
+	return rows, nil
 }
 
 func beginTx() (tx *sql.Tx, err error) {
@@ -1445,7 +1526,7 @@ func beginTx() (tx *sql.Tx, err error) {
 }
 
 // beginTxWithContext 使用 WorkspaceContext 开始事务
-func beginTxWithContext(ctx WorkspaceContext) (tx *sql.Tx, err error) {
+func beginTxWithContext(ctx WorkspaceContextInterface) (tx *sql.Tx, err error) {
 	database, err := GetDBWithContext(ctx)
 	if err != nil {
 		logging.LogErrorf("get database failed: %s", err)
@@ -1537,6 +1618,14 @@ func execStmtTx(tx *sql.Tx, stmt string, args ...interface{}) (err error) {
 			removeDatabaseFile()
 			logging.LogFatalf(logging.ExitCodeReadOnlyDatabase, "database disk image [%s] is malformed, please restart SiYuan kernel to rebuild it", util.DBPath)
 		}
+		
+		// 在多用户模式下，FTS 表可能不存在，这是正常的
+		if strings.Contains(err.Error(), "no such table: blocks_fts") || 
+		   strings.Contains(err.Error(), "no such table: blocks_fts_case_insensitive") {
+			logging.LogInfof("FTS table not found, skipping FTS operation: %s", stmt)
+			return nil
+		}
+		
 		logging.LogErrorf("exec database stmt [%s] failed: %s\n  %s", stmt, err, logging.ShortStack())
 		return
 	}

@@ -84,10 +84,14 @@ func RenderGroupView(attrView *av.AttributeView, view, groupView *av.View, query
 }
 
 func RenderView(attrView *av.AttributeView, view *av.View, query string) (ret av.Viewable) {
+	return RenderViewWithDataDir(util.DataDir, attrView, view, query)
+}
+
+func RenderViewWithDataDir(dataDir string, attrView *av.AttributeView, view *av.View, query string) (ret av.Viewable) {
 	depth := 1
 	renderedAttrViews := map[string]*av.AttributeView{}
 	renderedAttrViews[attrView.ID] = attrView
-	ret = renderView(attrView, view, query, &depth, renderedAttrViews)
+	ret = renderViewWithDataDir(dataDir, attrView, view, query, &depth, renderedAttrViews)
 
 	attrView.RenderedViewables[ret.GetID()] = ret
 	renderedAttrViews[attrView.ID] = attrView
@@ -95,6 +99,10 @@ func RenderView(attrView *av.AttributeView, view *av.View, query string) (ret av
 }
 
 func renderView(attrView *av.AttributeView, view *av.View, query string, depth *int, cachedAttrViews map[string]*av.AttributeView) (ret av.Viewable) {
+	return renderViewWithDataDir(util.DataDir, attrView, view, query, depth, cachedAttrViews)
+}
+
+func renderViewWithDataDir(dataDir string, attrView *av.AttributeView, view *av.View, query string, depth *int, cachedAttrViews map[string]*av.AttributeView) (ret av.Viewable) {
 	if 7 < *depth {
 		return
 	}
@@ -102,11 +110,11 @@ func renderView(attrView *av.AttributeView, view *av.View, query string, depth *
 	*depth++
 	switch view.LayoutType {
 	case av.LayoutTypeTable:
-		ret = RenderAttributeViewTable(attrView, view, query, depth, cachedAttrViews)
+		ret = RenderAttributeViewTableWithDataDir(dataDir, attrView, view, query, depth, cachedAttrViews)
 	case av.LayoutTypeGallery:
-		ret = RenderAttributeViewGallery(attrView, view, query, depth, cachedAttrViews)
+		ret = RenderAttributeViewGalleryWithDataDir(dataDir, attrView, view, query, depth, cachedAttrViews)
 	case av.LayoutTypeKanban:
-		ret = RenderAttributeViewKanban(attrView, view, query, depth, cachedAttrViews)
+		ret = RenderAttributeViewKanbanWithDataDir(dataDir, attrView, view, query, depth, cachedAttrViews)
 	}
 	return
 }

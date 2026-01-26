@@ -307,6 +307,11 @@ func BatchGetBlockAttrsWitTrees(ids []string, trees map[string]*parse.Tree) (ret
 }
 
 func BatchGetBlockAttrs(ids []string) (ret map[string]map[string]string) {
+	// 使用默认 WorkspaceContext 以保持向后兼容
+	return BatchGetBlockAttrsWithDataDir(util.DataDir, ids)
+}
+
+func BatchGetBlockAttrsWithDataDir(dataDir string, ids []string) (ret map[string]map[string]string) {
 	ret = map[string]map[string]string{}
 
 	hitCache := true
@@ -323,7 +328,7 @@ func BatchGetBlockAttrs(ids []string) (ret map[string]map[string]string) {
 		return
 	}
 
-	trees := filesys.LoadTrees(ids)
+	trees := filesys.LoadTreesWithDataDir(dataDir, ids)
 	for _, id := range ids {
 		tree := trees[id]
 		if nil == tree {

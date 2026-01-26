@@ -125,9 +125,45 @@ func (box *Box) docIAL(p string) (ret map[string]string) {
 	return ret
 }
 
+func (box *Box) docIALWithContext(ctx *WorkspaceContext, p string) (ret map[string]string) {
+	name := strings.ToLower(filepath.Base(p))
+	if !strings.HasSuffix(name, ".sy") {
+		return nil
+	}
+
+	ret = cache.GetDocIAL(p)
+	if nil != ret {
+		return ret
+	}
+
+	filePath := filepath.Join(ctx.GetDataDir(), box.ID, p)
+	ret = filesys.DocIAL(filePath)
+	if 1 > len(ret) {
+		logging.LogWarnf("properties not found in file [%s]", filePath)
+		box.moveCorruptedDataWithContext(ctx, filePath)
+		return nil
+	}
+	cache.PutDocIAL(p, ret)
+	return ret
+}
+
 func (box *Box) moveCorruptedData(filePath string) {
 	base := filepath.Base(filePath)
 	to := filepath.Join(util.WorkspaceDir, "corrupted", time.Now().Format("2006-01-02-150405"), box.ID, base)
+	if copyErr := filelock.Copy(filePath, to); nil != copyErr {
+		logging.LogErrorf("copy corrupted data file [%s] failed: %s", filePath, copyErr)
+		return
+	}
+	if removeErr := filelock.Remove(filePath); nil != removeErr {
+		logging.LogErrorf("remove corrupted data file [%s] failed: %s", filePath, removeErr)
+		return
+	}
+	logging.LogWarnf("moved corrupted data file [%s] to [%s]", filePath, to)
+}
+
+func (box *Box) moveCorruptedDataWithContext(ctx *WorkspaceContext, filePath string) {
+	base := filepath.Base(filePath)
+	to := filepath.Join(ctx.GetWorkspaceDir(), "corrupted", time.Now().Format("2006-01-02-150405"), box.ID, base)
 	if copyErr := filelock.Copy(filePath, to); nil != copyErr {
 		logging.LogErrorf("copy corrupted data file [%s] failed: %s", filePath, copyErr)
 		return
@@ -249,12 +285,12 @@ func ListDocTree(ctx *WorkspaceContext, boxID, listPath string, sortMode int, fl
 		deckBlockIDs = deck.GetBlockIDs()
 	}
 
-	box := Conf.Box(boxID)
+	box := Conf.BoxWithContext(ctx, boxID)
 	if nil == box {
 		return nil, 0, errors.New(Conf.Language(0))
 	}
 
-	boxConf := box.GetConf()
+	boxConf := box.GetConfWithDataDir(ctx.GetDataDir())
 
 	if util.SortModeUnassigned == sortMode {
 		sortMode = Conf.FileTree.Sort
@@ -265,7 +301,7 @@ func ListDocTree(ctx *WorkspaceContext, boxID, listPath string, sortMode int, fl
 
 	var files []*FileInfo
 	start := time.Now()
-	files, totals, err = box.Ls(listPath)
+	files, totals, err = box.LsWithDataDir(ctx.GetDataDir(), listPath)
 	if err != nil {
 		return
 	}
@@ -277,6 +313,8 @@ func ListDocTree(ctx *WorkspaceContext, boxID, listPath string, sortMode int, fl
 	start = time.Now()
 	boxLocalPath := filepath.Join(ctx.GetDataDir(), box.ID)
 	var docs []*File
+	processedDocs := make(map[string]bool) // 记录已处理的文档路径,避免重复添加
+	
 	for _, file := range files {
 		if file.isdir {
 			if !ast.IsNodeIDPattern(file.name) {
@@ -284,11 +322,15 @@ func ListDocTree(ctx *WorkspaceContext, boxID, listPath string, sortMode int, fl
 			}
 
 			parentDocPath := strings.TrimSuffix(file.path, "/") + ".sy"
+			if processedDocs[parentDocPath] {
+				continue // 已经处理过这个文档
+			}
+			
 			parentDocFile := box.Stat(parentDocPath)
 			if nil == parentDocFile {
 				continue
 			}
-			if ial := box.docIAL(parentDocPath); nil != ial {
+			if ial := box.docIALWithContext(ctx, parentDocPath); nil != ial {
 				if !showHidden && "true" == ial["custom-hidden"] {
 					continue
 				}
@@ -298,7 +340,7 @@ func ListDocTree(ctx *WorkspaceContext, boxID, listPath string, sortMode int, fl
 				if err == nil {
 					for _, subFile := range subFiles {
 						subDocFilePath := path.Join(file.path, subFile.Name())
-						if subIAL := box.docIAL(subDocFilePath); "true" == subIAL["custom-hidden"] {
+						if subIAL := box.docIALWithContext(ctx, subDocFilePath); "true" == subIAL["custom-hidden"] {
 							continue
 						}
 
@@ -316,9 +358,11 @@ func ListDocTree(ctx *WorkspaceContext, boxID, listPath string, sortMode int, fl
 						doc.DueFlashcardCount = dueFlashcardCount
 						doc.FlashcardCount = flashcardCount
 						docs = append(docs, doc)
+						processedDocs[parentDocPath] = true
 					}
 				} else {
 					docs = append(docs, doc)
+					processedDocs[parentDocPath] = true
 				}
 			}
 
@@ -330,17 +374,30 @@ func ListDocTree(ctx *WorkspaceContext, boxID, listPath string, sortMode int, fl
 			}
 		}
 
-		subFolder := filepath.Join(boxLocalPath, strings.TrimSuffix(file.path, ".sy"))
-		if gulu.File.IsDir(subFolder) {
+		// 检查是否已经在目录处理中添加过
+		if processedDocs[file.path] {
 			continue
 		}
 
-		if ial := box.docIAL(file.path); nil != ial {
+		if ial := box.docIALWithContext(ctx, file.path); nil != ial {
 			if !showHidden && "true" == ial["custom-hidden"] {
 				continue
 			}
 
 			doc := box.docFromFileInfo(file, ial)
+			
+			// 计算子文档数量
+			subFolder := filepath.Join(boxLocalPath, strings.TrimSuffix(file.path, ".sy"))
+			if gulu.File.IsDir(subFolder) {
+				subFiles, err := os.ReadDir(subFolder)
+				if err == nil {
+					for _, subFile := range subFiles {
+						if strings.HasSuffix(subFile.Name(), ".sy") {
+							doc.SubFileCount++
+						}
+					}
+				}
+			}
 
 			if flashcard {
 				rootID := util.GetTreeID(file.path)
@@ -350,9 +407,11 @@ func ListDocTree(ctx *WorkspaceContext, boxID, listPath string, sortMode int, fl
 					doc.DueFlashcardCount = dueFlashcardCount
 					doc.FlashcardCount = flashcardCount
 					docs = append(docs, doc)
+					processedDocs[file.path] = true
 				}
 			} else {
 				docs = append(docs, doc)
+				processedDocs[file.path] = true
 			}
 		}
 	}
@@ -397,7 +456,7 @@ func ListDocTree(ctx *WorkspaceContext, boxID, listPath string, sortMode int, fl
 		})
 	case util.SortModeCustom:
 		fileTreeFiles := docs
-		box.fillSort(&fileTreeFiles)
+		box.fillSortWithDataDir(ctx.GetDataDir(), &fileTreeFiles)
 		sort.Slice(fileTreeFiles, func(i, j int) bool {
 			if fileTreeFiles[i].Sort == fileTreeFiles[j].Sort {
 				return util.TimeFromID(fileTreeFiles[i].ID) > util.TimeFromID(fileTreeFiles[j].ID)
@@ -939,11 +998,27 @@ func loadNodesByMode(node *ast.Node, inputIndex, mode, size int, isDoc, isHeadin
 }
 
 func writeTreeUpsertQueue(tree *parse.Tree) (err error) {
-	size, err := filesys.WriteTree(tree)
+	return writeTreeUpsertQueueWithDataDir(tree, util.DataDir)
+}
+
+// writeTreeUpsertQueueWithDataDir 使用指定的 dataDir 写入树并更新队列
+func writeTreeUpsertQueueWithDataDir(tree *parse.Tree, dataDir string) (err error) {
+	size, err := filesys.WriteTreeWithDataDir(tree, dataDir)
 	if err != nil {
 		return
 	}
 	sql.UpsertTreeQueue(tree)
+	refreshDocInfoWithSize(tree, size)
+	return
+}
+
+// writeTreeUpsertQueueWithContext 使用 WorkspaceContext 写入树并更新队列
+func writeTreeUpsertQueueWithContext(tree *parse.Tree, ctx *WorkspaceContext) (err error) {
+	size, err := filesys.WriteTreeWithDataDir(tree, ctx.DataDir)
+	if err != nil {
+		return
+	}
+	sql.UpsertTreeQueueWithContext(tree, ctx)
 	refreshDocInfoWithSize(tree, size)
 	return
 }
@@ -959,8 +1034,25 @@ func indexWriteTreeIndexQueue(tree *parse.Tree) (err error) {
 }
 
 func indexWriteTreeUpsertQueue(tree *parse.Tree) (err error) {
-	treenode.UpsertBlockTree(tree)
-	return writeTreeUpsertQueue(tree)
+	return indexWriteTreeUpsertQueueWithContext(tree, GetDefaultWorkspaceContext())
+}
+
+// indexWriteTreeUpsertQueueWithContext 使用 WorkspaceContext 索引并写入树
+func indexWriteTreeUpsertQueueWithContext(tree *parse.Tree, ctx *WorkspaceContext) (err error) {
+	// 使用用户特定的 BlockTree 数据库
+	if nil != ctx && ctx.IsWebMode() {
+		database, dbErr := treenode.GetBlockTreeDBManager().GetOrCreateDB(ctx.BlockTreeDBPath)
+		if nil != dbErr {
+			logging.LogErrorf("get or create BlockTree database [%s] failed: %s", ctx.BlockTreeDBPath, dbErr)
+			// 降级到全局数据库
+			treenode.UpsertBlockTree(tree)
+		} else {
+			treenode.UpsertBlockTreeWithDB(tree, database)
+		}
+	} else {
+		treenode.UpsertBlockTree(tree)
+	}
+	return writeTreeUpsertQueueWithContext(tree, ctx)
 }
 
 func renameWriteJSONQueue(tree *parse.Tree) (err error) {
@@ -1018,10 +1110,16 @@ func createTreeTx(tree *parse.Tree) {
 var createDocLock = sync.Mutex{}
 
 func CreateDocByMd(boxID, p, title, md string, sorts []string) (tree *parse.Tree, err error) {
+	return CreateDocByMdWithContext(GetDefaultWorkspaceContext(), boxID, p, title, md, sorts)
+}
+
+// CreateDocByMdWithContext 使用 WorkspaceContext 创建文档
+func CreateDocByMdWithContext(ctx *WorkspaceContext, boxID, p, title, md string, sorts []string) (tree *parse.Tree, err error) {
 	createDocLock.Lock()
 	defer createDocLock.Unlock()
 
-	box := Conf.Box(boxID)
+	// 使用 WorkspaceContext 获取笔记本
+	box := Conf.BoxWithContext(ctx, boxID)
 	if nil == box {
 		err = errors.New(Conf.Language(0))
 		return
@@ -1029,16 +1127,16 @@ func CreateDocByMd(boxID, p, title, md string, sorts []string) (tree *parse.Tree
 
 	luteEngine := util.NewLute()
 	dom := luteEngine.Md2BlockDOM(md, false)
-	tree, err = createDoc(box.ID, p, title, dom)
+	tree, err = createDocWithContext(ctx, box.ID, p, title, dom)
 	if err != nil {
 		return
 	}
 
 	FlushTxQueue()
 	if 0 < len(sorts) {
-		ChangeFileTreeSort(box.ID, sorts)
+		ChangeFileTreeSortWithContext(ctx, box.ID, sorts)
 	} else {
-		box.setSortByConf(path.Dir(tree.Path), tree.ID)
+		box.setSortByConfWithContext(ctx, path.Dir(tree.Path), tree.ID)
 	}
 	return
 }
@@ -1052,7 +1150,7 @@ func CreateWithMarkdownWithContext(ctx *WorkspaceContext, tags, boxID, hPath, md
 	createDocLock.Lock()
 	defer createDocLock.Unlock()
 
-	box := Conf.Box(boxID)
+	box := Conf.BoxWithContext(ctx, boxID)
 	if nil == box {
 		err = errors.New(Conf.Language(0))
 		return
@@ -1090,7 +1188,7 @@ func CreateWithMarkdownWithContext(ctx *WorkspaceContext, tags, boxID, hPath, md
 		logging.LogWarnf("get block tree by id [%s] failed after create", retID)
 		return
 	}
-	box.setSortByConf(path.Dir(bt.Path), retID)
+	box.setSortByConfWithContext(ctx, path.Dir(bt.Path), retID)
 	return
 }
 
@@ -1208,10 +1306,22 @@ func CreateDailyNote(boxID string) (p string, existed bool, err error) {
 }
 
 func GetHPathByPath(boxID, p string) (hPath string, err error) {
+	return GetHPathByPathWithContext(GetDefaultWorkspaceContext(), boxID, p)
+}
+
+// GetHPathByPathWithContext 使用 WorkspaceContext 获取文档路径
+func GetHPathByPathWithContext(ctx *WorkspaceContext, boxID, p string) (hPath string, err error) {
 	if "/" == p {
 		hPath = "/"
 		return
 	}
+
+	// 临时切换 DataDir
+	originalDataDir := util.DataDir
+	defer func() {
+		util.DataDir = originalDataDir
+	}()
+	util.DataDir = ctx.GetDataDir()
 
 	luteEngine := util.NewLute()
 	tree, err := filesys.LoadTree(boxID, p, luteEngine)
@@ -1295,6 +1405,18 @@ func GetIDsByHPath(hpath, boxID string) (ret []string, err error) {
 }
 
 func MoveDocs(fromPaths []string, toBoxID, toPath string, callback interface{}) (err error) {
+	return MoveDocsWithContext(GetDefaultWorkspaceContext(), fromPaths, toBoxID, toPath, callback)
+}
+
+// MoveDocsWithContext 使用 WorkspaceContext 移动文档
+func MoveDocsWithContext(ctx *WorkspaceContext, fromPaths []string, toBoxID, toPath string, callback interface{}) (err error) {
+	// 临时切换 DataDir
+	originalDataDir := util.DataDir
+	defer func() {
+		util.DataDir = originalDataDir
+	}()
+	util.DataDir = ctx.GetDataDir()
+
 	toBox := Conf.Box(toBoxID)
 	if nil == toBox {
 		err = errors.New(Conf.Language(0))
@@ -1525,7 +1647,7 @@ func RemoveDoc(boxID, p string) {
 
 // RemoveDocWithContext 使用 WorkspaceContext 删除文档
 func RemoveDocWithContext(ctx *WorkspaceContext, boxID, p string) {
-	box := Conf.Box(boxID)
+	box := Conf.BoxWithContext(ctx, boxID)
 	if nil == box {
 		return
 	}
@@ -1538,6 +1660,18 @@ func RemoveDocWithContext(ctx *WorkspaceContext, boxID, p string) {
 }
 
 func RemoveDocs(paths []string) {
+	RemoveDocsWithContext(GetDefaultWorkspaceContext(), paths)
+}
+
+// RemoveDocsWithContext 使用 WorkspaceContext 删除多个文档
+func RemoveDocsWithContext(ctx *WorkspaceContext, paths []string) {
+	// 临时切换 DataDir
+	originalDataDir := util.DataDir
+	defer func() {
+		util.DataDir = originalDataDir
+	}()
+	util.DataDir = ctx.GetDataDir()
+
 	util.PushEndlessProgress(Conf.Language(116))
 	defer util.PushClearProgress()
 
@@ -1546,7 +1680,7 @@ func RemoveDocs(paths []string) {
 	FlushTxQueue()
 	luteEngine := util.NewLute()
 	for p, box := range pathsBoxes {
-		removeDoc(box, p, luteEngine)
+		removeDocWithContext(ctx, box, p, luteEngine)
 	}
 	return
 }
@@ -1606,13 +1740,13 @@ func removeDocWithContext(ctx *WorkspaceContext, box *Box, p string, luteEngine 
 	}
 
 	if existChildren {
-		if err = box.Remove(childrenDir); err != nil {
+		if err = box.RemoveWithContext(ctx, childrenDir); err != nil {
 			logging.LogErrorf("remove children dir [%s%s] failed: %s", box.ID, childrenDir, err)
 			return
 		}
 		logging.LogInfof("removed children dir [%s%s]", box.ID, childrenDir)
 	}
-	if err = box.Remove(p); err != nil {
+	if err = box.RemoveWithContext(ctx, p); err != nil {
 		logging.LogErrorf("remove [%s%s] failed: %s", box.ID, p, err)
 		return
 	}
@@ -1623,7 +1757,7 @@ func removeDocWithContext(ctx *WorkspaceContext, box *Box, p string, luteEngine 
 	if "/" != dir {
 		others, err := os.ReadDir(filepath.Join(dataDir, box.ID, dir))
 		if err == nil && 1 > len(others) {
-			box.Remove(dir)
+			box.RemoveWithContext(ctx, dir)
 		}
 	}
 
@@ -1657,11 +1791,18 @@ func RenameDoc(boxID, p, title string) (err error) {
 
 // RenameDocWithContext 使用 WorkspaceContext 重命名文档
 func RenameDocWithContext(ctx *WorkspaceContext, boxID, p, title string) (err error) {
-	box := Conf.Box(boxID)
+	box := Conf.BoxWithContext(ctx, boxID)
 	if nil == box {
 		err = errors.New(Conf.Language(0))
 		return
 	}
+
+	// 临时设置 DataDir 为用户的数据目录
+	originalDataDir := util.DataDir
+	defer func() {
+		util.DataDir = originalDataDir
+	}()
+	util.DataDir = ctx.GetDataDir()
 
 	FlushTxQueue()
 	luteEngine := util.NewLute()
@@ -1738,7 +1879,8 @@ func createDocWithContext(ctx *WorkspaceContext, boxID, p, title, dom string) (t
 		return
 	}
 
-	box := Conf.Box(boxID)
+	// 使用 WorkspaceContext 获取笔记本
+	box := Conf.BoxWithContext(ctx, boxID)
 	if nil == box {
 		err = errors.New(Conf.Language(0))
 		return
@@ -1765,16 +1907,22 @@ func createDocWithContext(ctx *WorkspaceContext, boxID, p, title, dom string) (t
 		return
 	}
 
-	if !box.Exist(folder) {
-		if err = box.MkdirAll(folder); err != nil {
+	// 使用用户特定的数据目录检查文件夹和文件是否存在
+	userFolderPath := filepath.Join(ctx.GetDataDir(), boxID, folder)
+	if !filelock.IsExist(userFolderPath) {
+		if err = os.MkdirAll(userFolderPath, 0755); err != nil {
 			return
 		}
 	}
 
-	if box.Exist(p) {
+	userDocPath := filepath.Join(ctx.GetDataDir(), boxID, p)
+	logging.LogInfof("createDocWithContext: checking file existence at [%s]", userDocPath)
+	if filelock.IsExist(userDocPath) {
+		logging.LogWarnf("createDocWithContext: file already exists at [%s]", userDocPath)
 		err = errors.New(Conf.Language(1))
 		return
 	}
+	logging.LogInfof("createDocWithContext: file does not exist, proceeding with creation")
 
 	luteEngine := util.NewLute()
 	tree = luteEngine.BlockDOM2Tree(dom)
@@ -1822,8 +1970,15 @@ func createDocWithContext(ctx *WorkspaceContext, boxID, p, title, dom string) (t
 		unlink.Unlink()
 	}
 
-	transaction := &Transaction{DoOperations: []*Operation{{Action: "create", Data: tree}}}
-	PerformTransactions(&[]*Transaction{transaction})
+	// 使用带 Context 的事务处理，确保文件写入到正确的用户数据目录
+	transaction := &Transaction{
+		DoOperations: []*Operation{{
+			Action: "create", 
+			Data:   tree,
+		}},
+		ctx: ctx, // 传递 WorkspaceContext
+	}
+	PerformTransactionsWithContext(ctx, &[]*Transaction{transaction})
 	FlushTxQueue()
 	return
 }
@@ -1893,6 +2048,10 @@ func moveSorts(rootID, fromBox, toBox string) {
 }
 
 func ChangeFileTreeSort(boxID string, paths []string) {
+	ChangeFileTreeSortWithContext(GetDefaultWorkspaceContext(), boxID, paths)
+}
+
+func ChangeFileTreeSortWithContext(ctx *WorkspaceContext, boxID string, paths []string) {
 	if 1 > len(paths) {
 		return
 	}
@@ -1911,7 +2070,7 @@ func ChangeFileTreeSort(boxID string, paths []string) {
 
 	p := paths[0]
 	parentPath := path.Dir(p)
-	absParentPath := filepath.Join(util.DataDir, boxID, parentPath)
+	absParentPath := filepath.Join(ctx.GetDataDir(), boxID, parentPath)
 	files, err := os.ReadDir(absParentPath)
 	if err != nil {
 		logging.LogErrorf("read dir [%s] failed: %s", absParentPath, err)
@@ -1932,7 +2091,7 @@ func ChangeFileTreeSort(boxID string, paths []string) {
 		sortFolderIDs[id] = val
 	}
 
-	confDir := filepath.Join(util.DataDir, box.ID, ".siyuan")
+	confDir := filepath.Join(ctx.GetDataDir(), box.ID, ".siyuan")
 	if err = os.MkdirAll(confDir, 0755); err != nil {
 		logging.LogErrorf("create conf dir failed: %s", err)
 		return
@@ -1970,7 +2129,11 @@ func ChangeFileTreeSort(boxID string, paths []string) {
 }
 
 func (box *Box) fillSort(files *[]*File) {
-	confPath := filepath.Join(util.DataDir, box.ID, ".siyuan", "sort.json")
+	box.fillSortWithDataDir(util.DataDir, files)
+}
+
+func (box *Box) fillSortWithDataDir(dataDir string, files *[]*File) {
+	confPath := filepath.Join(dataDir, box.ID, ".siyuan", "sort.json")
 	if !filelock.IsExist(confPath) {
 		return
 	}
@@ -2027,15 +2190,23 @@ func (box *Box) removeSort(ids []string) {
 }
 
 func (box *Box) setSortByConf(parentPath, id string) {
+	box.setSortByConfWithContext(GetDefaultWorkspaceContext(), parentPath, id)
+}
+
+func (box *Box) setSortByConfWithContext(ctx *WorkspaceContext, parentPath, id string) {
 	if *Conf.FileTree.CreateDocAtTop {
-		box.addMinSort(parentPath, id)
+		box.addMinSortWithContext(ctx, parentPath, id)
 	} else {
-		box.addMaxSort(parentPath, id)
+		box.addMaxSortWithContext(ctx, parentPath, id)
 	}
 }
 
 func (box *Box) addMaxSort(parentPath, id string) {
-	docs, _, err := ListDocTree(GetDefaultWorkspaceContext(), box.ID, parentPath, util.SortModeUnassigned, false, false, 102400)
+	box.addMaxSortWithContext(GetDefaultWorkspaceContext(), parentPath, id)
+}
+
+func (box *Box) addMaxSortWithContext(ctx *WorkspaceContext, parentPath, id string) {
+	docs, _, err := ListDocTree(ctx, box.ID, parentPath, util.SortModeUnassigned, false, false, 102400)
 	if err != nil {
 		logging.LogErrorf("list doc tree failed: %s", err)
 		return
@@ -2046,11 +2217,15 @@ func (box *Box) addMaxSort(parentPath, id string) {
 		sortVal = docs[len(docs)-1].Sort + 1
 	}
 
-	box.setSortVal(id, sortVal)
+	box.setSortValWithContext(ctx, id, sortVal)
 }
 
 func (box *Box) addMinSort(parentPath, id string) {
-	docs, _, err := ListDocTree(GetDefaultWorkspaceContext(), box.ID, parentPath, util.SortModeUnassigned, false, false, 1)
+	box.addMinSortWithContext(GetDefaultWorkspaceContext(), parentPath, id)
+}
+
+func (box *Box) addMinSortWithContext(ctx *WorkspaceContext, parentPath, id string) {
+	docs, _, err := ListDocTree(ctx, box.ID, parentPath, util.SortModeUnassigned, false, false, 1)
 	if err != nil {
 		logging.LogErrorf("list doc tree failed: %s", err)
 		return
@@ -2061,12 +2236,16 @@ func (box *Box) addMinSort(parentPath, id string) {
 		sortVal = docs[0].Sort - 1
 	}
 
-	box.setSortVal(id, sortVal)
+	box.setSortValWithContext(ctx, id, sortVal)
 }
 
 func (box *Box) setSortVal(id string, sortVal int) {
+	box.setSortValWithContext(GetDefaultWorkspaceContext(), id, sortVal)
+}
+
+func (box *Box) setSortValWithContext(ctx *WorkspaceContext, id string, sortVal int) {
 	var err error
-	confDir := filepath.Join(util.DataDir, box.ID, ".siyuan")
+	confDir := filepath.Join(ctx.GetDataDir(), box.ID, ".siyuan")
 	if err = os.MkdirAll(confDir, 0755); err != nil {
 		logging.LogErrorf("create conf dir failed: %s", err)
 		return

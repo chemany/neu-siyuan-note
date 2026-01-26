@@ -25,6 +25,7 @@
 * [📦 快速开始](#-快速开始)
 * [🛠️ 部署指南](#️-部署指南)
 * [📊 性能指标](#-性能指标)
+* [📚 技术文档](#-技术文档)
 * [🙏 致谢](#-致谢)
 
 ---
@@ -196,6 +197,57 @@
 └─────────────────────────────────────────────────────────────┘
 ```
 
+### BlockTree 查询系统架构
+
+灵枢笔记的 BlockTree 查询系统经过完整重构，实现了真正的多用户数据隔离：
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                      TreeNode 层                             │
+│                   (kernel/treenode)                          │
+│                                                              │
+│  ┌──────────────────────────────────────────────────┐       │
+│  │         BlockTree 查询函数（WithDB 版本）         │       │
+│  │                                                   │       │
+│  │  • GetBlockTreeRootByHPathWithDB()               │       │
+│  │  • GetBlockTreeRootByPathWithDB()                │       │
+│  │  • GetBlockTreeWithDB()                          │       │
+│  │  • GetBlockTreeByHPathPreferredParentIDWithDB()  │       │
+│  │  • GetBlockTreesByRootIDWithDB()                 │       │
+│  │  • UpsertBlockTreeWithDB()                       │       │
+│  └──────────────────────────────────────────────────┘       │
+│                             │                                │
+│                             ▼                                │
+│  ┌──────────────────────────────────────────────────┐       │
+│  │       BlockTreeDBManager                         │       │
+│  │       (数据库连接池管理器)                        │       │
+│  │                                                   │       │
+│  │  • GetOrCreateDB(dbPath) → *sql.DB               │       │
+│  │  • 最多 100 个连接                                │       │
+│  │  • 30 分钟空闲自动清理                            │       │
+│  │  • 线程安全（sync.RWMutex）                       │       │
+│  └──────────────────────────────────────────────────┘       │
+└─────────────────────────────────────────────────────────────┘
+                             │
+                             ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    用户数据库文件                             │
+│  /root/code/MindOcean/user-data/notes/                      │
+│  ├── user_a/blocktree.db  ← 用户 A 的数据库                 │
+│  ├── user_b/blocktree.db  ← 用户 B 的数据库                 │
+│  └── user_c/blocktree.db  ← 用户 C 的数据库                 │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**核心特性**：
+- ✅ 每个用户独立的数据库文件
+- ✅ 数据库连接池自动管理
+- ✅ 所有查询函数支持多用户
+- ✅ 向后兼容旧代码
+- ✅ 性能监控和慢查询日志
+
+详细架构说明请参考：[BlockTree 架构文档](BLOCKTREE_ARCHITECTURE.md)
+
 ### 核心组件
 
 #### 1. WorkspaceContext（请求级隔离）
@@ -291,7 +343,8 @@ type UserCacheManager struct {
 ├── user_a/              # 用户A的workspace
 │   ├── 笔记本1/
 │   ├── conf/           # 配置
-│   └── assets/         # 资源
+│   ├── assets/         # 资源
+│   └── blocktree.db    # BlockTree 数据库
 ├── user_b/              # 用户B的workspace
 │   └── ...
 └── user_c/              # 用户C的workspace
@@ -300,8 +353,9 @@ type UserCacheManager struct {
 
 #### 2. 数据库隔离
 - 每个用户独立的 SQLite 数据库文件
-- 通过连接池自动管理连接
+- 通过 BlockTreeDBManager 管理连接池
 - 查询自动路由到正确的数据库
+- 支持最多 100 个并发数据库连接
 
 #### 3. 缓存隔离
 - 每个用户独立的缓存实例
@@ -312,6 +366,45 @@ type UserCacheManager struct {
 - 每个请求独立的 WorkspaceContext
 - Context创建后不可变
 - 无全局状态修改
+
+### BlockTree 查询系统重构
+
+灵枢笔记的 BlockTree 查询系统经过完整重构，解决了多用户环境下的数据隔离问题：
+
+**重构前的问题**：
+- ❌ 所有查询使用全局数据库变量
+- ❌ 无法支持多用户数据隔离
+- ❌ 子文档创建在错误的位置
+
+**重构后的改进**：
+- ✅ 所有查询函数支持数据库参数
+- ✅ 每个用户独立的数据库连接
+- ✅ 子文档正确创建在父文档目录下
+- ✅ 向后兼容，保留旧函数
+- ✅ 性能监控和慢查询日志
+
+**核心函数**：
+```go
+// 旧版本（向后兼容）
+func GetBlockTreeRootByHPath(boxID, hPath string) *BlockTree
+
+// 新版本（支持多用户）
+func GetBlockTreeRootByHPathWithDB(boxID, hPath string, database *sql.DB) *BlockTree
+```
+
+**使用示例**：
+```go
+// Model 层获取用户数据库
+userDB, _ := btManager.GetOrCreateDB(ctx.BlockTreeDBPath)
+
+// 使用用户数据库查询
+parent := GetBlockTreeRootByHPathWithDB("box1", "/父文档", userDB)
+
+// 在父文档下创建子文档
+child := createSubDocument(parent, "子文档")
+```
+
+详细说明请参考：[BlockTree 架构文档](BLOCKTREE_ARCHITECTURE.md)
 
 ### 并发安全保证
 
@@ -538,6 +631,60 @@ export AI_MODEL_KEY=your-api-key
 - ✅ 吞吐量: 提升100倍+
 
 详见 [完整更新日志](CHANGELOG.md)
+
+---
+
+## 📚 技术文档
+
+### 架构文档
+
+- **[BlockTree 查询系统架构](BLOCKTREE_ARCHITECTURE.md)** - 详细说明 BlockTree 查询系统的多用户架构设计
+- **[子文档创建流程](SUBDOCUMENT_CREATION_FLOW.md)** - 完整的子文档创建流程和数据流图
+- **[构建和部署指南](BUILD_AND_DEPLOY.md)** - 构建、部署和运维指南
+
+### 核心概念
+
+#### WorkspaceContext（请求级隔离）
+
+每个 HTTP 请求都有独立的 WorkspaceContext，包含用户的所有路径信息：
+
+```go
+type WorkspaceContext struct {
+    WorkspaceDir    string // workspace 根目录
+    DataDir         string // 数据目录
+    BlockTreeDBPath string // BlockTree 数据库路径
+    UserID          string // 用户 ID
+    Username        string // 用户名
+}
+```
+
+#### BlockTreeDBManager（数据库连接池）
+
+管理多个用户的数据库连接，实现连接复用和自动清理：
+
+```go
+// 获取或创建数据库连接
+userDB, _ := btManager.GetOrCreateDB(ctx.BlockTreeDBPath)
+
+// 使用用户数据库查询
+tree := GetBlockTreeRootByHPathWithDB("box1", "/父文档", userDB)
+```
+
+#### 查询函数设计模式
+
+所有 BlockTree 查询函数都有两个版本：
+
+```go
+// 旧版本（向后兼容）- 使用全局数据库
+func GetBlockTreeRootByHPath(boxID, hPath string) *BlockTree
+
+// 新版本（支持多用户）- 接受数据库参数
+func GetBlockTreeRootByHPathWithDB(boxID, hPath string, database *sql.DB) *BlockTree
+```
+
+### API 文档
+
+详细的 API 文档请参考：[API.md](API.md)
 
 ---
 

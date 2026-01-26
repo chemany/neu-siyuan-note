@@ -147,9 +147,26 @@ resources/*.asar
 # ========================================
 # 灵枢笔记 - 排除原版文档和开发文档
 # ========================================
-# 保留 README.md (灵枢笔记说明)
-# 排除思源笔记原版文档
-# README_zh_CN.md  # 已更新为 NeuLink Notes 说明文档
+# 保留核心文档
+!README.md
+!LICENSE
+!LICENSE.md
+!BUILD_AND_DEPLOY.md
+!BLOCKTREE_ARCHITECTURE.md
+!SUBDOCUMENT_CREATION_FLOW.md
+!Dockerfile
+!go.mod
+!ecosystem.config.js
+
+# 排除所有其他 MD 文档（临时文档）
+*.md
+!README.md
+!LICENSE.md
+!BUILD_AND_DEPLOY.md
+!BLOCKTREE_ARCHITECTURE.md
+!SUBDOCUMENT_CREATION_FLOW.md
+
+# 排除原版思源笔记文档
 README_ja_JP.md
 CHANGELOG.md
 API.md
@@ -158,120 +175,46 @@ API_zh_CN.md
 # 排除 .kiro 目录（开发规范和任务）
 .kiro/
 
-# 排除 PM2 配置
-ecosystem.config.js
-
-# 排除开发过程中的临时文档
-思源笔记多用户Web应用改造技术总结.md
-ACCOUNT_INTEGRATION_SUMMARY.md
-AI_ENHANCEMENT_GUIDE.md
-AI_SETTINGS_BUGFIX.md
-AI_SETTINGS_ENHANCEMENT.md
-API_ROUTING_FIX.md
-ASSET_VECTORIZATION_MANUAL.md
-AUTO_VECTORIZATION_DESIGN.md
-BUILD_AND_RUN.md
-BUILTIN_MODEL_INTEGRATION.md
-DEPLOYMENT_SUMMARY.md
-EXTERNAL_ACCESS_FIX.md
-FINAL_SUMMARY.md
-NGINX_CONFIG_GUIDE.md
-NGINX_REMOTE_ACCESS_FIX.md
-NOTEBOOK_OPTIMIZATION_SUMMARY.md
-PATH_ISSUE_SOLUTIONS.md
-RAG_USER_MANUAL.md
-SIMPLIFIED_SUMMARY.md
-SUB_FILTER_SOLUTION.md
-SUB_PATH_FIX_SUMMARY.md
-SYNC_SIMPLIFICATION_GUIDE.md
-UI_OPTIMIZATION_GUIDE.md
-WEB_MULTIUSER_GUIDE.md
-
-# 排除所有修复和诊断文档
-*_FIX.md
-*_FIX_*.md
-*_SUMMARY.md
-*_GUIDE.md
-*_MANUAL.md
-*_DESIGN.md
-*_COMPLETE.md
-*_IMPLEMENTATION.md
-*_INTEGRATION.md
-*_PROGRESS.md
-*_REFACTOR_*.md
-REFACTOR_*.md
-504_TIMEOUT_FIX.md
-AI_DOCUMENT_ANALYSIS_FIX.md
-ASSET_CLEANUP_FIX.md
-AUTO_VECTORIZATION_DESIGN.md
-BATCH_VECTORIZE_GUIDE.md
-DATABASE_SWITCH_FIX.md
-FINAL_FIX_SUMMARY.md
-GLOBAL_VECTORIZE_SERVICE_COMPLETE.md
-HIGH_PERFORMANCE_VECTORIZE.md
-INDEX_REBUILD_ISSUE.md
-LOGIN_REDIRECT_FIX.md
-MEETING_NOTES_DIAGNOSIS.md
-OCR_TEST_GUIDE.md
-RERANKER_IMPLEMENTATION.md
-SYNC_FIX_SUMMARY.md
-SYNC_TEST_GUIDE.md
-WEBDAV_CONFIG_FIX.md
-WEBDAV_SYNC_FIX.md
-PHASE*_COMPLETION_SUMMARY.md
-MULTI_USER_REFACTOR_PROGRESS.md
-DATABASE_LAYER_REFACTOR_PROGRESS.md
-CACHE_LAYER_TEST_GUIDE.md
-MANUAL_TEST_GUIDE.md
-
-# 排除中文文档
-*.md
-!README.md
-!LICENSE.md
-快速参考.md
-灵枢笔记问题排查总结.md
-修复完成报告.md
-同步功能修复说明.md
-密钥自动重新生成问题修复说明.md
-最终修复方案.md
-解决密钥不匹配问题.md
-设置自己的密钥.sh
-诊断同步配置.sh
-使用旧密钥同步.md
-清空云端重新同步.md
-WEBDAV_问题排查总结.md
-WebDAV同步配置指南.md
-
-# 排除临时脚本
-fix-embedding-config.js
-fix-notepads-final.py
-fix-unified-db.js
-migrate-notepads-to-siyuan.sh
-sync-users-to-unified.js
-verify-external-access.sh
-
 # 排除所有测试脚本
 test-*.sh
+test-*.py
 test-*.js
-test-*.go
-*-test.sh
-*-test.js
-check-*.sh
-verify-*.sh
-diagnose-*.sh
-batch-*.sh
-start-*.sh
-rebuild-*.sh
+test-*.html
+test_*.sh
+test_*.py
+test_*.js
+
+# 排除所有工具脚本
 fix-*.sh
 fix-*.js
 fix-*.py
-监控*.sh
+diagnose-*.sh
+check-*.sh
+verify-*.sh
+batch-*.sh
+monitor-*.sh
+create-*.sh
+get-*.sh
+migrate-*.sh
+sync-*.js
+
+# 排除中文脚本
 查看*.sh
 等待*.sh
+监控*.sh
+设置*.sh
 实时*.sh
 诊断*.sh
 
-# 排除备份文件
-*.backup
-*.backup.*
-siyuan-kernel.backup.*
+# 排除日志和临时文件
+test-output.log
+CURRENT_STATUS.txt
+ocr_verify.go
+check_db.py
+
+# 保留构建脚本（但不提交到 Git）
+rebuild-*.sh
+reload-*.sh
+
+# 排除清理计划文档（临时）
+CLEANUP_PLAN.md

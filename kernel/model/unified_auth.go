@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/siyuan-note/logging"
+	"github.com/siyuan-note/siyuan/kernel/treenode"
 )
 
 // UnifiedUser 统一注册服务用户信息
@@ -219,6 +220,25 @@ func (s *UnifiedAuthService) LoginWithUnifiedToken(token string) (*AuthResponse,
 	user, err := s.SyncUserFromUnified(token)
 	if err != nil {
 		return nil, fmt.Errorf("failed to sync user from unified service: %w", err)
+	}
+
+	// 创建用户特定的 WorkspaceContext
+	// 获取用户数据根目录
+	userDataRoot := os.Getenv("SIYUAN_USER_DATA_ROOT")
+	if userDataRoot == "" {
+		userDataRoot = "/root/code/MindOcean/user-data/notes"
+	}
+	userDataDir := userDataRoot + "/" + user.Username
+	ctx := NewWorkspaceContext(userDataDir)
+	
+	// 设置为当前用户的 Context
+	SetCurrentUserContext(user.Username, ctx)
+	logging.LogInfof("Set current user context for user: %s", user.Username)
+	
+	// 切换到用户特定的 BlockTree 数据库
+	if err := treenode.SwitchBlockTreeDB(ctx.BlockTreeDBPath); err != nil {
+		logging.LogErrorf("Failed to switch BlockTree DB for user %s: %s", user.Username, err)
+		// 不阻断登录流程，只记录错误
 	}
 
 	// 生成本地JWT令牌

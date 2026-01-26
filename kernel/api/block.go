@@ -65,7 +65,9 @@ func getBlockTreeInfos(c *gin.Context) {
 		ids = append(ids, id.(string))
 	}
 
-	ret.Data = model.GetBlockTreeInfos(ids)
+	// 从 Gin Context 获取 WorkspaceContext
+	ctx := model.GetWorkspaceContext(c)
+	ret.Data = model.GetBlockTreeInfosWithContext(ctx, ids)
 }
 
 func getBlockSiblingID(c *gin.Context) {
@@ -141,7 +143,7 @@ func transferBlockRef(c *gin.Context) {
 		}
 	}
 
-	err := model.TransferBlockRef(fromID, toID, refIDs)
+	err := model.TransferBlockRefWithContext(model.GetWorkspaceContext(c), fromID, toID, refIDs)
 	if err != nil {
 		ret.Code = -1
 		ret.Msg = err.Error()
@@ -390,6 +392,10 @@ func getDocsInfo(c *gin.Context) {
 	if !ok {
 		return
 	}
+	
+	// 获取 WorkspaceContext
+	ctx := model.GetWorkspaceContext(c)
+	
 	idsArg := arg["ids"].([]interface{})
 	var ids []string
 	for _, id := range idsArg {
@@ -397,7 +403,9 @@ func getDocsInfo(c *gin.Context) {
 	}
 	queryRefCount := arg["refCount"].(bool)
 	queryAv := arg["av"].(bool)
-	info := model.GetDocsInfo(ids, queryRefCount, queryAv)
+	
+	// 使用带 Context 的版本
+	info := model.GetDocsInfoWithContext(ctx, ids, queryRefCount, queryAv)
 	if nil == info {
 		ret.Code = -1
 		ret.Msg = fmt.Sprintf(model.Conf.Language(15), ids)
@@ -740,7 +748,7 @@ func getBlockDOMs(c *gin.Context) {
 		ids = append(ids, id.(string))
 	}
 
-	doms := model.GetBlockDOMs(ids)
+	doms := model.GetBlockDOMsWithContext(model.GetWorkspaceContext(c), ids)
 	ret.Data = doms
 }
 
@@ -776,7 +784,7 @@ func getBlockDOMsWithEmbed(c *gin.Context) {
 		ids = append(ids, id.(string))
 	}
 
-	doms := model.GetBlockDOMsWithEmbed(ids)
+	doms := model.GetBlockDOMsWithEmbedWithContext(model.GetWorkspaceContext(c), ids)
 	ret.Data = doms
 }
 

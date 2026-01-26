@@ -17,6 +17,7 @@
 package model
 
 import (
+	sql2 "database/sql"
 	"bytes"
 	"os"
 	"path"
@@ -44,6 +45,17 @@ func createDocsByHPathWithContext(ctx *WorkspaceContext, boxID, hPath, content, 
 	}
 	retID = id
 
+	// 获取用户特定的 BlockTree 数据库
+	var userDB *sql2.DB
+	if ctx.IsWebMode() {
+		var dbErr error
+		userDB, dbErr = treenode.GetBlockTreeDBManager().GetOrCreateDB(ctx.BlockTreeDBPath)
+		if nil != dbErr {
+			logging.LogErrorf("get or create BlockTree database [%s] failed: %s, falling back to global database", ctx.BlockTreeDBPath, dbErr)
+			userDB = nil
+		}
+	}
+
 	hPath = strings.TrimSuffix(hPath, ".sy")
 	hPath = util.TrimSpaceInPath(hPath)
 	if "" != parentID {
@@ -51,7 +63,14 @@ func createDocsByHPathWithContext(ctx *WorkspaceContext, boxID, hPath, content, 
 		// 在指定了父文档 ID 的情况下优先查找父文档
 		parentHPath, name := path.Split(hPath)
 		parentHPath = strings.TrimSuffix(parentHPath, "/")
-		preferredParent := treenode.GetBlockTreeByHPathPreferredParentID(boxID, parentHPath, parentID)
+		
+		var preferredParent *treenode.BlockTree
+		if nil != userDB {
+			preferredParent = treenode.GetBlockTreeByHPathPreferredParentIDWithDB(boxID, parentHPath, parentID, userDB)
+		} else {
+			preferredParent = treenode.GetBlockTreeByHPathPreferredParentID(boxID, parentHPath, parentID)
+		}
+		
 		if nil != preferredParent && preferredParent.RootID == parentID {
 			// 如果父文档存在且 ID 一致，则直接在父文档下创建
 			p := strings.TrimSuffix(preferredParent.Path, ".sy") + "/" + id + ".sy"
@@ -62,7 +81,12 @@ func createDocsByHPathWithContext(ctx *WorkspaceContext, boxID, hPath, content, 
 		}
 	}
 
-	root := treenode.GetBlockTreeRootByPath(boxID, hPath)
+	var root *treenode.BlockTree
+	if nil != userDB {
+		root = treenode.GetBlockTreeRootByPathWithDB(boxID, hPath, userDB)
+	} else {
+		root = treenode.GetBlockTreeRootByPath(boxID, hPath)
+	}
 	if nil != root {
 		retID = root.ID
 		return
@@ -81,7 +105,12 @@ func createDocsByHPathWithContext(ctx *WorkspaceContext, boxID, hPath, content, 
 		hPathBuilder.WriteString("/")
 		hPathBuilder.WriteString(part)
 		hp := hPathBuilder.String()
-		root = treenode.GetBlockTreeRootByHPath(boxID, hp)
+		
+		if nil != userDB {
+			root = treenode.GetBlockTreeRootByHPathWithDB(boxID, hp, userDB)
+		} else {
+			root = treenode.GetBlockTreeRootByHPath(boxID, hp)
+		}
 		if nil == root {
 			break
 		}

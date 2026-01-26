@@ -20,7 +20,9 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"os"
 	"path"
+	"path/filepath"
 	"runtime/debug"
 	"sync"
 	"sync/atomic"
@@ -37,7 +39,93 @@ var (
 	operationQueue []*dbQueueOperation
 	dbQueueLock    = sync.Mutex{}
 	txLock         = sync.Mutex{}
+	
+	// boxWorkspaceCache 缓存 Box ID 到 WorkspaceContext 的映射
+	boxWorkspaceCache = make(map[string]WorkspaceContext)
+	boxWorkspaceLock  = sync.RWMutex{}
 )
+
+// getWorkspaceContextForBox 从 Box ID 获取对应的 WorkspaceContext
+// 通过扫描用户数据目录来查找 Box 所属的用户
+func getWorkspaceContextForBox(boxID string) (WorkspaceContext, error) {
+	if boxID == "" {
+		return nil, errors.New("box ID is empty")
+	}
+	
+	// 先检查缓存
+	boxWorkspaceLock.RLock()
+	if ctx, exists := boxWorkspaceCache[boxID]; exists {
+		boxWorkspaceLock.RUnlock()
+		return ctx, nil
+	}
+	boxWorkspaceLock.RUnlock()
+	
+	// 用户数据根目录
+	userDataRoot := "/root/code/MindOcean/user-data/notes"
+	
+	// 扫描用户目录
+	entries, err := os.ReadDir(userDataRoot)
+	if err != nil {
+		logging.LogErrorf("读取用户数据目录失败 [%s]: %s", userDataRoot, err)
+		return nil, err
+	}
+	
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		
+		username := entry.Name()
+		userWorkspace := filepath.Join(userDataRoot, username)
+		boxPath := filepath.Join(userWorkspace, boxID)
+		
+		// 检查 Box 是否存在于该用户目录下
+		if _, err := os.Stat(boxPath); err == nil {
+			// 找到了！创建 WorkspaceContext
+			ctx := &WorkspaceContextImpl{
+				WorkspaceDir:  userWorkspace,
+				DataDir:       userWorkspace,
+				ConfDir:       filepath.Join(userWorkspace, ".siyuan"),
+				RepoDir:       filepath.Join(userWorkspace, "repo"),
+				HistoryDir:    filepath.Join(userWorkspace, "history"),
+				TempDir:       filepath.Join(userWorkspace, "temp"),
+				UserID:        "",
+				Username:      username,
+				WorkspaceName: username,
+			}
+			
+			// 缓存结果
+			boxWorkspaceLock.Lock()
+			boxWorkspaceCache[boxID] = ctx
+			boxWorkspaceLock.Unlock()
+			
+			logging.LogInfof("找到 Box [%s] 属于用户 [%s]", boxID, username)
+			return ctx, nil
+		}
+	}
+	
+	// 没有找到，返回错误
+	err = fmt.Errorf("未找到 Box [%s] 对应的用户", boxID)
+	logging.LogErrorf("%s", err)
+	return nil, err
+}
+
+// WorkspaceContextImpl 实现 WorkspaceContext 接口
+type WorkspaceContextImpl struct {
+	WorkspaceDir  string
+	DataDir       string
+	ConfDir       string
+	RepoDir       string
+	HistoryDir    string
+	TempDir       string
+	UserID        string
+	Username      string
+	WorkspaceName string
+}
+
+func (ctx *WorkspaceContextImpl) GetWorkspaceDir() string { return ctx.WorkspaceDir }
+func (ctx *WorkspaceContextImpl) GetDataDir() string      { return ctx.DataDir }
+func (ctx *WorkspaceContextImpl) GetConfDir() string      { return ctx.ConfDir }
 
 type dbQueueOperation struct {
 	inQueueTime                   time.Time
@@ -52,6 +140,8 @@ type dbQueueOperation struct {
 	block                         *Block      // update_block_content
 	id                            string      // index_node
 	removeAssetHashes             []string    // delete_assets
+	boxID                         string      // 笔记本 ID，用于确定用户的数据库
+	workspaceCtx                  WorkspaceContext // WorkspaceContext，用于多用户数据库隔离
 }
 
 func FlushTxJob() {
@@ -99,9 +189,31 @@ func FlushQueue() {
 			return
 		}
 
-		tx, err := beginTx()
+		// 根据 workspaceCtx 或 boxID 获取对应的数据库连接
+		var tx *sql.Tx
+		var err error
+		
+		if op.workspaceCtx != nil {
+			// 优先使用 workspaceCtx
+			tx, err = beginTxWithContext(op.workspaceCtx)
+		} else if op.boxID != "" {
+			// 降级：使用 boxID 查找 WorkspaceContext
+			wsCtx, ctxErr := getWorkspaceContextForBox(op.boxID)
+			if ctxErr != nil {
+				logging.LogErrorf("获取 Box [%s] 的 WorkspaceContext 失败: %s", op.boxID, ctxErr)
+				// 降级到全局数据库
+				tx, err = beginTx()
+			} else {
+				tx, err = beginTxWithContext(wsCtx)
+			}
+		} else {
+			// 没有 workspaceCtx 和 boxID，使用全局数据库
+			tx, err = beginTx()
+		}
+		
 		if err != nil {
-			return
+			logging.LogErrorf("开始事务失败: %s", err)
+			continue
 		}
 
 		groupOpsCurrent[op.action]++
@@ -224,7 +336,7 @@ func DeleteRefsTreeQueue(tree *parse.Tree) {
 	dbQueueLock.Lock()
 	defer dbQueueLock.Unlock()
 
-	newOp := &dbQueueOperation{upsertTree: tree, inQueueTime: time.Now(), action: "delete_refs"}
+	newOp := &dbQueueOperation{upsertTree: tree, inQueueTime: time.Now(), action: "delete_refs", boxID: tree.Box}
 	for i, op := range operationQueue {
 		if "delete_refs" == op.action && op.upsertTree.ID == tree.ID {
 			operationQueue[i] = newOp
@@ -238,7 +350,7 @@ func UpdateRefsTreeQueue(tree *parse.Tree) {
 	dbQueueLock.Lock()
 	defer dbQueueLock.Unlock()
 
-	newOp := &dbQueueOperation{upsertTree: tree, inQueueTime: time.Now(), action: "update_refs"}
+	newOp := &dbQueueOperation{upsertTree: tree, inQueueTime: time.Now(), action: "update_refs", boxID: tree.Box}
 	for i, op := range operationQueue {
 		if "update_refs" == op.action && op.upsertTree.ID == tree.ID {
 			operationQueue[i] = newOp
@@ -277,10 +389,20 @@ func DeleteBoxQueue(boxID string) {
 }
 
 func IndexTreeQueue(tree *parse.Tree) {
+	IndexTreeQueueWithContext(tree, nil)
+}
+
+func IndexTreeQueueWithContext(tree *parse.Tree, ctx WorkspaceContext) {
 	dbQueueLock.Lock()
 	defer dbQueueLock.Unlock()
 
-	newOp := &dbQueueOperation{indexTree: tree, inQueueTime: time.Now(), action: "index"}
+	newOp := &dbQueueOperation{
+		indexTree:    tree,
+		inQueueTime:  time.Now(),
+		action:       "index",
+		boxID:        tree.Box,
+		workspaceCtx: ctx,
+	}
 	for i, op := range operationQueue {
 		if "index" == op.action && op.indexTree.ID == tree.ID { // 相同树则覆盖
 			operationQueue[i] = newOp
@@ -291,10 +413,20 @@ func IndexTreeQueue(tree *parse.Tree) {
 }
 
 func UpsertTreeQueue(tree *parse.Tree) {
+	UpsertTreeQueueWithContext(tree, nil)
+}
+
+func UpsertTreeQueueWithContext(tree *parse.Tree, ctx WorkspaceContext) {
 	dbQueueLock.Lock()
 	defer dbQueueLock.Unlock()
 
-	newOp := &dbQueueOperation{upsertTree: tree, inQueueTime: time.Now(), action: "upsert"}
+	newOp := &dbQueueOperation{
+		upsertTree:   tree,
+		inQueueTime:  time.Now(),
+		action:       "upsert",
+		boxID:        tree.Box,
+		workspaceCtx: ctx,
+	}
 	for i, op := range operationQueue {
 		if "upsert" == op.action && op.upsertTree.ID == tree.ID { // 相同树则覆盖
 			operationQueue[i] = newOp
@@ -312,6 +444,7 @@ func RenameTreeQueue(tree *parse.Tree) {
 		renameTree:  tree,
 		inQueueTime: time.Now(),
 		action:      "rename",
+		boxID:       tree.Box,
 	}
 	for i, op := range operationQueue {
 		if "rename" == op.action && op.renameTree.ID == tree.ID { // 相同树则覆盖
@@ -330,6 +463,7 @@ func RenameSubTreeQueue(tree *parse.Tree) {
 		renameTree:  tree,
 		inQueueTime: time.Now(),
 		action:      "rename_sub_tree",
+		boxID:       tree.Box,
 	}
 	for i, op := range operationQueue {
 		if "rename_sub_tree" == op.action && op.renameTree.ID == tree.ID { // 相同树则覆盖

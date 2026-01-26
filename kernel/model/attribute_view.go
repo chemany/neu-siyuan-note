@@ -2542,7 +2542,7 @@ func (tx *Transaction) doRemoveAttrViewView(operation *Operation) (ret *TxErr) {
 		return &TxErr{code: TxErrCodeWriteTree, msg: err.Error(), id: avID}
 	}
 
-	trees, nodes := getMirrorBlocksNodes(avID)
+	trees, nodes := getMirrorBlocksNodesWithContext(tx.ctx, avID)
 	for _, node := range nodes {
 		attrs := parse.IAL2Map(node.KramdownIAL)
 		blockViewID := attrs[av.NodeAttrView]
@@ -2571,8 +2571,12 @@ func (tx *Transaction) doRemoveAttrViewView(operation *Operation) (ret *TxErr) {
 }
 
 func getMirrorBlocksNodes(avID string) (trees []*parse.Tree, nodes []*ast.Node) {
+	return getMirrorBlocksNodesWithContext(GetDefaultWorkspaceContext(), avID)
+}
+
+func getMirrorBlocksNodesWithContext(ctx *WorkspaceContext, avID string) (trees []*parse.Tree, nodes []*ast.Node) {
 	mirrorBlockIDs := treenode.GetMirrorAttrViewBlockIDs(avID)
-	mirrorBlockTrees := filesys.LoadTrees(mirrorBlockIDs)
+	mirrorBlockTrees := LoadTreesWithContext(ctx, mirrorBlockIDs)
 	for id, tree := range mirrorBlockTrees {
 		node := treenode.GetNodeInTree(tree, id)
 		if nil == node {

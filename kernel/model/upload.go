@@ -35,7 +35,20 @@ import (
 )
 
 func InsertLocalAssets(id string, assetAbsPaths []string, isUpload bool) (succMap map[string]interface{}, err error) {
+	return InsertLocalAssetsWithContext(nil, id, assetAbsPaths, isUpload)
+}
+
+func InsertLocalAssetsWithContext(ctx *WorkspaceContext, id string, assetAbsPaths []string, isUpload bool) (succMap map[string]interface{}, err error) {
 	succMap = map[string]interface{}{}
+
+	// 如果有 WorkspaceContext，临时设置 DataDir
+	if ctx != nil {
+		originalDataDir := util.DataDir
+		defer func() {
+			util.DataDir = originalDataDir
+		}()
+		util.DataDir = ctx.GetDataDir()
+	}
 
 	bt := treenode.GetBlockTree(id)
 	if nil == bt {
@@ -132,6 +145,15 @@ func InsertLocalAssets(id string, assetAbsPaths []string, isUpload bool) (succMa
 func Upload(c *gin.Context) {
 	ret := gulu.Ret.NewResult()
 	defer c.JSON(200, ret)
+
+	// 获取 WorkspaceContext 并临时设置 DataDir
+	ctx := GetWorkspaceContext(c)
+	originalDataDir := util.DataDir
+	defer func() {
+		util.DataDir = originalDataDir
+	}()
+	
+	util.DataDir = ctx.GetDataDir()
 
 	form, err := c.MultipartForm()
 	if err != nil {

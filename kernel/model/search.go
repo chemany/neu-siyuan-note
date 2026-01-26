@@ -17,6 +17,7 @@
 package model
 
 import (
+	sql2 "database/sql"
 	"bytes"
 	"errors"
 	"fmt"
@@ -313,10 +314,25 @@ func buildEmbedBlock(embedBlockID string, excludeIDs []string, headingMode int, 
 }
 
 func SearchRefBlock(id, rootID, keyword string, beforeLen int, isSquareBrackets, isDatabase bool) (ret []*Block, newDoc bool) {
+	return searchRefBlockWithContext(GetDefaultWorkspaceContext(), id, rootID, keyword, beforeLen, isSquareBrackets, isDatabase)
+}
+
+func searchRefBlockWithContext(ctx *WorkspaceContext, id, rootID, keyword string, beforeLen int, isSquareBrackets, isDatabase bool) (ret []*Block, newDoc bool) {
 	cachedTrees := map[string]*parse.Tree{}
 	nodeTrees := map[string]*parse.Tree{}
 	var nodeIDs []string
 	var nodes []*ast.Node
+
+	// 获取用户特定的 BlockTree 数据库
+	var userDB *sql2.DB
+	if ctx.IsWebMode() {
+		var dbErr error
+		userDB, dbErr = treenode.GetBlockTreeDBManager().GetOrCreateDB(ctx.BlockTreeDBPath)
+		if nil != dbErr {
+			logging.LogErrorf("get or create BlockTree database [%s] failed: %s, falling back to global database", ctx.BlockTreeDBPath, dbErr)
+			userDB = nil
+		}
+	}
 
 	onlyDoc := false
 	if isSquareBrackets {
@@ -339,7 +355,7 @@ func SearchRefBlock(id, rootID, keyword string, beforeLen int, isSquareBrackets,
 		for _, ref := range refs {
 			tree := cachedTrees[ref.DefBlockRootID]
 			if nil == tree {
-				tree, _ = loadTreeByBlockTree(bts[ref.DefBlockRootID])
+				tree, _ = loadTreeByBlockTreeWithContext(ctx, bts[ref.DefBlockRootID])
 			}
 			if nil == tree {
 				continue
@@ -392,7 +408,7 @@ func SearchRefBlock(id, rootID, keyword string, beforeLen int, isSquareBrackets,
 	for _, b := range ret {
 		tree := cachedTrees[b.RootID]
 		if nil == tree {
-			tree, _ = loadTreeByBlockTree(bts[b.RootID])
+			tree, _ = loadTreeByBlockTreeWithContext(ctx, bts[b.RootID])
 		}
 		if nil == tree {
 			continue
@@ -405,7 +421,7 @@ func SearchRefBlock(id, rootID, keyword string, beforeLen int, isSquareBrackets,
 			// `((` 引用候选中排除当前块的父块 https://github.com/siyuan-note/siyuan/issues/4538
 			tree = cachedTrees[b.RootID]
 			if nil == tree {
-				tree, _ = loadTreeByBlockTree(bts[b.RootID])
+				tree, _ = loadTreeByBlockTreeWithContext(ctx, bts[b.RootID])
 				cachedTrees[b.RootID] = tree
 			}
 			if nil != tree {
@@ -440,9 +456,21 @@ func SearchRefBlock(id, rootID, keyword string, beforeLen int, isSquareBrackets,
 
 	if !isDatabase {
 		// 如果非数据库中搜索块引，则不允许新建重名文档
-		if block := treenode.GetBlockTree(id); nil != block {
+		var block *treenode.BlockTree
+		if nil != userDB {
+			block = treenode.GetBlockTreeWithDB(id, userDB)
+		} else {
+			block = treenode.GetBlockTree(id)
+		}
+		if nil != block {
 			p := path.Join(block.HPath, keyword)
-			newDoc = nil == treenode.GetBlockTreeRootByHPath(block.BoxID, p)
+			var existingDoc *treenode.BlockTree
+			if nil != userDB {
+				existingDoc = treenode.GetBlockTreeRootByHPathWithDB(block.BoxID, p, userDB)
+			} else {
+				existingDoc = treenode.GetBlockTreeRootByHPath(block.BoxID, p)
+			}
+			newDoc = nil == existingDoc
 		}
 	} else { // 如果是数据库中搜索绑定块，则允许新建重名文档 https://github.com/siyuan-note/siyuan/issues/11713
 		newDoc = true
@@ -1172,6 +1200,25 @@ func mergeSamePreNext(n *ast.Node) {
 // orderBy: 0：按块类型（默认），1：按创建时间升序，2：按创建时间降序，3：按更新时间升序，4：按更新时间降序，5：按内容顺序（仅在按文档分组时），6：按相关度升序，7：按相关度降序
 // groupBy：0：不分组，1：按文档分组
 func FullTextSearchBlock(query string, boxes, paths []string, types map[string]bool, method, orderBy, groupBy, page, pageSize int) (ret []*Block, matchedBlockCount, matchedRootCount, pageCount int, docMode bool) {
+	return fullTextSearchBlockInternal(nil, query, boxes, paths, types, method, orderBy, groupBy, page, pageSize)
+}
+
+// fullTextSearchBlockInternal 内部实现，支持可选的 WorkspaceContext
+func fullTextSearchBlockInternal(ctx *WorkspaceContext, query string, boxes, paths []string, types map[string]bool, method, orderBy, groupBy, page, pageSize int) (ret []*Block, matchedBlockCount, matchedRootCount, pageCount int, docMode bool) {
+	// 如果提供了 Context，设置为当前 goroutine 的 Context
+	if nil != ctx {
+		// 设置数据库查询的 Context（传递指针）
+		sql.SetCurrentContext(ctx)
+		defer sql.ClearCurrentContext()
+		
+		// 同时设置 DataDir（用于文件操作）
+		originalDataDir := util.DataDir
+		defer func() {
+			util.DataDir = originalDataDir
+		}()
+		util.DataDir = ctx.GetDataDir()
+	}
+	
 	ret = []*Block{}
 	if "" == query {
 		return
@@ -2304,30 +2351,12 @@ func ListInvalidBlockRefsWithContext(ctx *WorkspaceContext, page, pageSize int) 
 
 // FullTextSearchBlockWithContext 使用 WorkspaceContext 进行全文搜索
 func FullTextSearchBlockWithContext(ctx *WorkspaceContext, query string, boxes, paths []string, types map[string]bool, method, orderBy, groupBy, page, pageSize int) (ret []*Block, matchedBlockCount, matchedRootCount, pageCount int, docMode bool) {
-	// 暂时保存原始的 util.DataDir
-	originalDataDir := util.DataDir
-	defer func() {
-		util.DataDir = originalDataDir
-	}()
-	
-	// 临时设置为用户的 DataDir
-	util.DataDir = ctx.GetDataDir()
-	
-	return FullTextSearchBlock(query, boxes, paths, types, method, orderBy, groupBy, page, pageSize)
+	return fullTextSearchBlockInternal(ctx, query, boxes, paths, types, method, orderBy, groupBy, page, pageSize)
 }
 
 // SearchRefBlockWithContext 使用 WorkspaceContext 搜索引用块
 func SearchRefBlockWithContext(ctx *WorkspaceContext, id, rootID, keyword string, beforeLen int, isSquareBrackets, isDatabase bool) (ret []*Block, newDoc bool) {
-	// 暂时保存原始的 util.DataDir
-	originalDataDir := util.DataDir
-	defer func() {
-		util.DataDir = originalDataDir
-	}()
-	
-	// 临时设置为用户的 DataDir
-	util.DataDir = ctx.GetDataDir()
-	
-	return SearchRefBlock(id, rootID, keyword, beforeLen, isSquareBrackets, isDatabase)
+	return searchRefBlockWithContext(ctx, id, rootID, keyword, beforeLen, isSquareBrackets, isDatabase)
 }
 
 // SearchEmbedBlockWithContext 使用 WorkspaceContext 搜索嵌入块

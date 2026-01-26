@@ -26,7 +26,6 @@ import (
 
 	"github.com/88250/gulu"
 	"github.com/fsnotify/fsnotify"
-	"github.com/siyuan-note/filelock"
 	"github.com/siyuan-note/logging"
 	"github.com/siyuan-note/siyuan/kernel/bazaar"
 	"github.com/siyuan-note/siyuan/kernel/conf"
@@ -35,19 +34,11 @@ import (
 
 func InitAppearance() {
 	util.SetBootDetails("Initializing appearance...")
-	if err := os.Mkdir(util.AppearancePath, 0755); err != nil && !os.IsExist(err) {
-		logging.LogErrorf("create appearance folder [%s] failed: %s", util.AppearancePath, err)
-		util.ReportFileSysFatalError(err)
-		return
-	}
-
-	unloadThemes()
-	from := filepath.Join(util.WorkingDir, "appearance")
-	if err := filelock.Copy(from, util.AppearancePath); err != nil {
-		logging.LogErrorf("copy appearance resources from [%s] to [%s] failed: %s", from, util.AppearancePath, err)
-		util.ReportFileSysFatalError(err)
-		return
-	}
+	
+	// 在多用户模式下，不需要创建全局的 appearance 目录
+	// 每个用户的 appearance 配置在用户目录创建时已经初始化
+	// 这里只加载主题和图标信息
+	
 	loadThemes()
 
 	if !containTheme(Conf.Appearance.ThemeDark, Conf.Appearance.DarkThemes) {

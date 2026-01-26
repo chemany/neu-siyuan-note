@@ -53,6 +53,7 @@ require (
 	github.com/panjf2000/ants/v2 v2.11.3
 	github.com/patrickmn/go-cache v2.1.0+incompatible
 	github.com/pdfcpu/pdfcpu v0.11.0
+	github.com/petermattis/goid v0.0.0-20260113132338-7c7de50cc741
 	github.com/radovskyb/watcher v1.0.7
 	github.com/rqlite/sql v0.0.0-20250623131620-453fa49cad04
 	github.com/sabhiram/go-gitignore v0.0.0-20210923224102-525f6e181f06

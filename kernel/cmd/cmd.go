@@ -19,6 +19,7 @@ package cmd
 import (
 	"github.com/olahol/melody"
 	"github.com/siyuan-note/logging"
+	"github.com/siyuan-note/siyuan/kernel/model"
 	"github.com/siyuan-note/siyuan/kernel/util"
 )
 
@@ -33,6 +34,7 @@ type BaseCmd struct {
 	id          float64
 	param       map[string]interface{}
 	session     *melody.Session
+	ctx         *model.WorkspaceContext // ✅ 添加 WorkspaceContext
 	PushPayload *util.Result
 }
 
@@ -50,7 +52,21 @@ func (cmd *BaseCmd) Push() {
 }
 
 func NewCommand(cmdStr string, cmdId float64, param map[string]interface{}, session *melody.Session) (ret Cmd) {
-	baseCmd := &BaseCmd{id: cmdId, param: param, session: session}
+	// ✅ 从 session 中获取 WorkspaceContext
+	var ctx *model.WorkspaceContext
+	if ctxVal, exists := session.Get("workspaceContext"); exists {
+		ctx = ctxVal.(*model.WorkspaceContext)
+		logging.LogInfof("Command [%s] using WorkspaceContext: %s", cmdStr, ctx.DataDir)
+	} else {
+		logging.LogWarnf("Command [%s] has no WorkspaceContext", cmdStr)
+	}
+	
+	baseCmd := &BaseCmd{
+		id:      cmdId,
+		param:   param,
+		session: session,
+		ctx:     ctx, // ✅ 传递 WorkspaceContext
+	}
 	switch cmdStr {
 	case "closews":
 		ret = &closews{baseCmd}

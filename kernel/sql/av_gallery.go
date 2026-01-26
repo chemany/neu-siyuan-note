@@ -19,6 +19,10 @@ import (
 )
 
 func RenderAttributeViewGallery(attrView *av.AttributeView, view *av.View, query string, depth *int, cachedAttrViews map[string]*av.AttributeView) (ret *av.Gallery) {
+	return RenderAttributeViewGalleryWithDataDir(util.DataDir, attrView, view, query, depth, cachedAttrViews)
+}
+
+func RenderAttributeViewGalleryWithDataDir(dataDir string, attrView *av.AttributeView, view *av.View, query string, depth *int, cachedAttrViews map[string]*av.AttributeView) (ret *av.Gallery) {
 	viewable := attrView.RenderedViewables[view.ID]
 	if nil != viewable {
 		ret = viewable.(*av.Gallery)
@@ -81,7 +85,7 @@ func RenderAttributeViewGallery(attrView *av.AttributeView, view *av.View, query
 			}
 		}
 	}
-	boundTrees := filesys.LoadTrees(ialIDs)
+	boundTrees := filesys.LoadTreesWithDataDir(dataDir, ialIDs)
 
 	// 生成卡片字段值
 	for cardID, cardValues := range cardsValues {

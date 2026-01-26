@@ -24,7 +24,6 @@ import (
 	"github.com/88250/gulu"
 	"github.com/88250/lute/ast"
 	"github.com/siyuan-note/siyuan/kernel/av"
-	"github.com/siyuan-note/siyuan/kernel/filesys"
 	"github.com/siyuan-note/siyuan/kernel/treenode"
 	"github.com/siyuan-note/siyuan/kernel/util"
 )
@@ -145,7 +144,8 @@ func upgradeAttributeViewSpec1(attrView *av.AttributeView) {
 	}
 	blockIDs = gulu.Str.RemoveDuplicatedElem(blockIDs)
 
-	trees := filesys.LoadTrees(blockIDs)
+	// 使用默认 WorkspaceContext，因为这是内部升级函数
+	trees := LoadTreesWithContext(GetDefaultWorkspaceContext(), blockIDs)
 	for _, id := range blockIDs {
 		tree := trees[id]
 		if nil == tree {

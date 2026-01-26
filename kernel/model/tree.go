@@ -200,7 +200,7 @@ func LoadTreeByBlockIDWithReindexAndContext(ctx *WorkspaceContext, id string) (r
 		}
 
 		// 尝试从文件系统加载并建立索引
-		indexTreeInFilesystem(id)
+		indexTreeInFilesystemWithContext(ctx, id)
 
 		bt = treenode.GetBlockTree(id)
 		if nil == bt {
@@ -218,30 +218,7 @@ func LoadTreeByBlockIDWithReindexAndContext(ctx *WorkspaceContext, id string) (r
 }
 
 func LoadTreeByBlockID(id string) (ret *parse.Tree, err error) {
-	if !ast.IsNodeIDPattern(id) {
-		stack := logging.ShortStack()
-		logging.LogErrorf("block id is invalid [id=%s], stack: [%s]", id, stack)
-		return nil, ErrTreeNotFound
-	}
-
-	bt := treenode.GetBlockTree(id)
-	if nil == bt {
-		if task.ContainIndexTask() {
-			err = ErrIndexing
-			return
-		}
-
-		stack := logging.ShortStack()
-		if !strings.Contains(stack, "BuildBlockBreadcrumb") {
-			if "dev" == util.Mode {
-				logging.LogWarnf("block tree not found [id=%s], stack: [%s]", id, stack)
-			}
-		}
-		return nil, ErrTreeNotFound
-	}
-
-	ret, err = loadTreeByBlockTree(bt)
-	return
+	return LoadTreeByBlockIDWithContext(GetDefaultWorkspaceContext(), id)
 }
 
 // LoadTreeByBlockIDWithContext 使用 WorkspaceContext 加载树
@@ -273,14 +250,32 @@ func LoadTreeByBlockIDWithContext(ctx *WorkspaceContext, id string) (ret *parse.
 }
 
 func loadTreeByBlockTree(bt *treenode.BlockTree) (ret *parse.Tree, err error) {
-	luteEngine := util.NewLute()
-	ret, err = filesys.LoadTree(bt.BoxID, bt.Path, luteEngine)
-	return
+	// 使用当前用户的 workspace context
+	ctx := GetCurrentUserContext()
+	return loadTreeByBlockTreeWithContext(ctx, bt)
 }
 
 // loadTreeByBlockTreeWithContext 使用 WorkspaceContext 加载树
 func loadTreeByBlockTreeWithContext(ctx *WorkspaceContext, bt *treenode.BlockTree) (ret *parse.Tree, err error) {
 	luteEngine := util.NewLute()
+	
+	// 如果是 Web 模式，从用户特定的数据库读取 BlockTree
+	if ctx.IsWebMode() {
+		database, dbErr := treenode.GetBlockTreeDBManager().GetOrCreateDB(ctx.BlockTreeDBPath)
+		if nil == dbErr {
+			// 从用户特定的数据库读取
+			userBT := treenode.GetBlockTreeWithDB(bt.ID, database)
+			if nil != userBT {
+				bt = userBT
+				logging.LogInfof("loaded BlockTree from user database [%s] for block [%s]", ctx.BlockTreeDBPath, bt.ID)
+			} else {
+				logging.LogWarnf("BlockTree not found in user database [%s] for block [%s], using provided BlockTree", ctx.BlockTreeDBPath, bt.ID)
+			}
+		} else {
+			logging.LogErrorf("get or create BlockTree database [%s] failed: %s", ctx.BlockTreeDBPath, dbErr)
+		}
+	}
+	
 	ret, err = filesys.LoadTreeWithDataDir(ctx.GetDataDir(), bt.BoxID, bt.Path, luteEngine)
 	return
 }
@@ -288,6 +283,11 @@ func loadTreeByBlockTreeWithContext(ctx *WorkspaceContext, bt *treenode.BlockTre
 var searchTreeLimiter = rate.NewLimiter(rate.Every(3*time.Second), 1)
 
 func indexTreeInFilesystem(rootID string) {
+	// 使用默认 workspace context（向后兼容）
+	indexTreeInFilesystemWithContext(GetDefaultWorkspaceContext(), rootID)
+}
+
+func indexTreeInFilesystemWithContext(ctx *WorkspaceContext, rootID string) {
 	if !searchTreeLimiter.Allow() {
 		return
 	}
@@ -297,7 +297,8 @@ func indexTreeInFilesystem(rootID string) {
 
 	logging.LogWarnf("searching tree on filesystem [rootID=%s]", rootID)
 	var treePath string
-	filelock.Walk(util.DataDir, func(path string, d fs.DirEntry, err error) error {
+	dataDir := ctx.GetDataDir()
+	filelock.Walk(dataDir, func(path string, d fs.DirEntry, err error) error {
 		if d.IsDir() {
 			if strings.HasPrefix(d.Name(), ".") {
 				return filepath.SkipDir
@@ -323,20 +324,19 @@ func indexTreeInFilesystem(rootID string) {
 		return
 	}
 
-	boxID := strings.TrimPrefix(treePath, util.DataDir)
+	boxID := strings.TrimPrefix(treePath, dataDir)
 	boxID = boxID[1:]
 	boxID = boxID[:strings.Index(boxID, string(os.PathSeparator))]
-	treePath = strings.TrimPrefix(treePath, util.DataDir)
+	treePath = strings.TrimPrefix(treePath, dataDir)
 	treePath = strings.TrimPrefix(treePath, string(os.PathSeparator))
 	treePath = strings.TrimPrefix(treePath, boxID)
 	treePath = filepath.ToSlash(treePath)
-	if nil == Conf.Box(boxID) {
-		logging.LogInfof("box [%s] not found", boxID)
-		// 如果笔记本不存在或者已经关闭，则不处理 https://github.com/siyuan-note/siyuan/issues/11149
-		return
-	}
-
-	tree, err := filesys.LoadTree(boxID, treePath, util.NewLute())
+	
+	// 不检查笔记本是否存在，直接尝试加载树
+	// 因为新创建的笔记本可能还没有被加载到内存中
+	// 参考: https://github.com/siyuan-note/siyuan/issues/11149
+	
+	tree, err := filesys.LoadTreeWithDataDir(dataDir, boxID, treePath, util.NewLute())
 	if err != nil {
 		logging.LogErrorf("load tree [%s] failed: %s", treePath, err)
 		return
@@ -348,7 +348,9 @@ func indexTreeInFilesystem(rootID string) {
 }
 
 func loadParentTree(tree *parse.Tree) (ret *parse.Tree) {
-	boxDir := filepath.Join(util.DataDir, tree.Box)
+	// 使用当前用户的 workspace context
+	ctx := GetCurrentUserContext()
+	boxDir := filepath.Join(ctx.GetDataDir(), tree.Box)
 	parentDir := path.Dir(tree.Path)
 	if parentDir == boxDir || parentDir == "/" {
 		return
@@ -356,6 +358,11 @@ func loadParentTree(tree *parse.Tree) (ret *parse.Tree) {
 
 	luteEngine := lute.New()
 	parentPath := parentDir + ".sy"
-	ret, _ = filesys.LoadTree(tree.Box, parentPath, luteEngine)
+	ret, _ = filesys.LoadTreeWithDataDir(ctx.GetDataDir(), tree.Box, parentPath, luteEngine)
 	return
+}
+
+// LoadTreesWithContext 使用 WorkspaceContext 批量加载树
+func LoadTreesWithContext(ctx *WorkspaceContext, ids []string) (ret map[string]*parse.Tree) {
+	return filesys.LoadTreesWithDataDir(ctx.GetDataDir(), ids)
 }

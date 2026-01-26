@@ -164,13 +164,11 @@ func Boot() {
 	tryLockWorkspace()
 
 	AppearancePath = filepath.Join(ConfDir, "appearance")
-	if "dev" == Mode {
-		ThemesPath = filepath.Join(WorkingDir, "appearance", "themes")
-		IconsPath = filepath.Join(WorkingDir, "appearance", "icons")
-	} else {
-		ThemesPath = filepath.Join(AppearancePath, "themes")
-		IconsPath = filepath.Join(AppearancePath, "icons")
-	}
+	
+	// 主题和图标资源始终从应用程序目录读取（所有用户共享）
+	// 这样可以节省空间，也更容易管理
+	ThemesPath = filepath.Join(WorkingDir, "appearance", "themes")
+	IconsPath = filepath.Join(WorkingDir, "appearance", "icons")
 
 	initPathDir()
 

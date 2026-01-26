@@ -17,17 +17,23 @@
 package model
 
 import (
+	sql2 "database/sql"
 	"path"
 	"strings"
 
 	"github.com/88250/lute/ast"
 	"github.com/88250/lute/parse"
+	"github.com/siyuan-note/logging"
 	"github.com/siyuan-note/siyuan/kernel/sql"
 	"github.com/siyuan-note/siyuan/kernel/treenode"
 	"github.com/siyuan-note/siyuan/kernel/util"
 )
 
 func ListItem2Doc(srcListItemID, targetBoxID, targetPath, previousPath string) (srcRootBlockID, newTargetPath string, err error) {
+	return ListItem2DocWithContext(GetDefaultWorkspaceContext(), srcListItemID, targetBoxID, targetPath, previousPath)
+}
+
+func ListItem2DocWithContext(ctx *WorkspaceContext, srcListItemID, targetBoxID, targetPath, previousPath string) (srcRootBlockID, newTargetPath string, err error) {
 	FlushTxQueue()
 
 	srcTree, _ := LoadTreeByBlockID(srcListItemID)
@@ -43,6 +49,17 @@ func ListItem2Doc(srcListItemID, targetBoxID, targetPath, previousPath string) (
 		return
 	}
 
+	// 获取用户特定的 BlockTree 数据库
+	var userDB *sql2.DB
+	if ctx.IsWebMode() {
+		var dbErr error
+		userDB, dbErr = treenode.GetBlockTreeDBManager().GetOrCreateDB(ctx.BlockTreeDBPath)
+		if nil != dbErr {
+			logging.LogErrorf("get or create BlockTree database [%s] failed: %s, falling back to global database", ctx.BlockTreeDBPath, dbErr)
+			userDB = nil
+		}
+	}
+
 	box := Conf.Box(targetBoxID)
 	listItemText := sql.GetContainerText(listItemNode)
 	listItemText = util.FilterFileName(listItemText)
@@ -52,7 +69,12 @@ func ListItem2Doc(srcListItemID, targetBoxID, targetPath, previousPath string) (
 	toFolder := "/"
 
 	if "" != previousPath {
-		previousDoc := treenode.GetBlockTreeRootByPath(targetBoxID, previousPath)
+		var previousDoc *treenode.BlockTree
+		if nil != userDB {
+			previousDoc = treenode.GetBlockTreeRootByPathWithDB(targetBoxID, previousPath, userDB)
+		} else {
+			previousDoc = treenode.GetBlockTreeRootByPath(targetBoxID, previousPath)
+		}
 		if nil == previousDoc {
 			err = ErrBlockNotFound
 			return
@@ -60,7 +82,12 @@ func ListItem2Doc(srcListItemID, targetBoxID, targetPath, previousPath string) (
 		parentPath := path.Dir(previousPath)
 		if "/" != parentPath {
 			parentPath = strings.TrimSuffix(parentPath, "/") + ".sy"
-			parentDoc := treenode.GetBlockTreeRootByPath(targetBoxID, parentPath)
+			var parentDoc *treenode.BlockTree
+			if nil != userDB {
+				parentDoc = treenode.GetBlockTreeRootByPathWithDB(targetBoxID, parentPath, userDB)
+			} else {
+				parentDoc = treenode.GetBlockTreeRootByPath(targetBoxID, parentPath)
+			}
 			if nil == parentDoc {
 				err = ErrBlockNotFound
 				return
@@ -70,7 +97,12 @@ func ListItem2Doc(srcListItemID, targetBoxID, targetPath, previousPath string) (
 		}
 	} else {
 		if !moveToRoot {
-			parentDoc := treenode.GetBlockTreeRootByPath(targetBoxID, targetPath)
+			var parentDoc *treenode.BlockTree
+			if nil != userDB {
+				parentDoc = treenode.GetBlockTreeRootByPathWithDB(targetBoxID, targetPath, userDB)
+			} else {
+				parentDoc = treenode.GetBlockTreeRootByPath(targetBoxID, targetPath)
+			}
 			if nil == parentDoc {
 				err = ErrBlockNotFound
 				return
@@ -82,7 +114,7 @@ func ListItem2Doc(srcListItemID, targetBoxID, targetPath, previousPath string) (
 
 	newTargetPath = path.Join(toFolder, srcListItemID+".sy")
 	if !box.Exist(toFolder) {
-		if err = box.MkdirAll(toFolder); err != nil {
+		if err = box.MkdirAllWithContext(ctx, toFolder); err != nil {
 			return
 		}
 	}

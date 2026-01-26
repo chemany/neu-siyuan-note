@@ -350,7 +350,8 @@ func removeUnusedAsset(c *gin.Context) {
 	}
 
 	p := arg["path"].(string)
-	asset := model.RemoveUnusedAsset(p)
+	ctx := model.GetWorkspaceContext(c)
+	asset := model.RemoveUnusedAssetWithContext(ctx, p)
 	ret.Data = map[string]interface{}{
 		"path": asset,
 	}
@@ -360,7 +361,8 @@ func removeUnusedAssets(c *gin.Context) {
 	ret := gulu.Ret.NewResult()
 	defer c.JSON(http.StatusOK, ret)
 
-	paths := model.RemoveUnusedAssets()
+	ctx := model.GetWorkspaceContext(c)
+	paths := model.RemoveUnusedAssetsWithContext(ctx)
 	ret.Data = map[string]interface{}{
 		"paths": paths,
 	}
@@ -370,7 +372,9 @@ func getUnusedAssets(c *gin.Context) {
 	ret := gulu.Ret.NewResult()
 	defer c.JSON(http.StatusOK, ret)
 
-	unusedAssets := model.UnusedAssets()
+	// 使用 WorkspaceContext 获取未引用资源
+	ctx := model.GetWorkspaceContext(c)
+	unusedAssets := model.UnusedAssetsWithContext(ctx)
 	total := len(unusedAssets)
 
 	// List only 512 unreferenced assets https://github.com/siyuan-note/siyuan/issues/13075
@@ -457,7 +461,10 @@ func insertLocalAssets(c *gin.Context) {
 		isUpload = isUploadArg.(bool)
 	}
 	id := arg["id"].(string)
-	succMap, err := model.InsertLocalAssets(id, assetPaths, isUpload)
+	
+	// 获取 WorkspaceContext 并使用带 Context 的版本
+	ctx := model.GetWorkspaceContext(c)
+	succMap, err := model.InsertLocalAssetsWithContext(ctx, id, assetPaths, isUpload)
 	if err != nil {
 		ret.Code = -1
 		ret.Msg = err.Error()

@@ -337,11 +337,36 @@ func serveAppearance(ginServer *gin.Engine) {
 		c.Redirect(302, location.String())
 	})
 
-	appearancePath := util.AppearancePath
-	if "dev" == util.Mode {
-		appearancePath = filepath.Join(util.WorkingDir, "appearance")
-	}
 	siyuan.GET("/appearance/*filepath", func(c *gin.Context) {
+		// 获取用户的 WorkspaceContext
+		ctx := model.GetWorkspaceContext(c)
+		
+		// 根据请求路径确定使用哪个 appearance 目录
+		// 主题和图标从全局目录读取（所有用户共享）
+		// 语言文件从用户目录读取（用户特定，需要认证）
+		var appearancePath string
+		requestPath := c.Request.URL.Path
+		
+		if strings.Contains(requestPath, "/langs/") {
+			// 语言文件从用户的 conf/appearance 目录读取
+			// 注意：此路径需要认证，所以 ctx 一定是用户特定的
+			appearancePath = filepath.Join(ctx.GetConfDir(), "appearance")
+		} else if strings.Contains(requestPath, "/themes/") || strings.Contains(requestPath, "/icons/") {
+			// 主题和图标从全局目录读取
+			if "dev" == util.Mode {
+				appearancePath = filepath.Join(util.WorkingDir, "appearance")
+			} else {
+				appearancePath = util.AppearancePath
+			}
+		} else {
+			// 其他文件（如 boot、fonts、emojis 等）从全局目录读取
+			if "dev" == util.Mode {
+				appearancePath = filepath.Join(util.WorkingDir, "appearance")
+			} else {
+				appearancePath = util.AppearancePath
+			}
+		}
+		
 		filePath := filepath.Join(appearancePath, strings.TrimPrefix(c.Request.URL.Path, "/appearance/"))
 		if strings.HasSuffix(c.Request.URL.Path, "/theme.js") {
 			if !gulu.File.IsExist(filePath) {
@@ -674,15 +699,85 @@ func serveWebSocket(ginServer *gin.Engine) {
 	util.WebSocketServer.HandleConnect(func(s *melody.Session) {
 		//logging.LogInfof("ws check auth for [%s]", s.Request.RequestURI)
 		authOk := false
+		var workspaceCtx *model.WorkspaceContext // 用于存储用户的 WorkspaceContext
+		var userID string
+		var username string
 
 		// Web Mode下优先使用JWT认证
 		if os.Getenv("SIYUAN_WEB_MODE") == "true" {
 			if token := model.ParseXAuthToken(s.Request); token != nil {
-				authOk = token.Valid && model.IsValidRole(model.GetClaimRole(model.GetTokenClaims(token)), []model.Role{
-					model.RoleAdministrator,
-					model.RoleEditor,
-					model.RoleReader,
-				})
+				// 先检查 token 是否有效
+				if !token.Valid {
+					logging.LogWarnf("[WebSocket] Invalid token")
+				} else {
+					// Token 有效，检查是否是灵枢笔记 token（有 role 字段且为数字）
+					claims := model.GetTokenClaims(token)
+					if role, ok := claims[model.ClaimsKeyRole]; ok {
+						// 灵枢笔记 token，检查 role
+						if roleFloat, ok := role.(float64); ok {
+							authOk = model.IsValidRole(model.Role(roleFloat), []model.Role{
+								model.RoleAdministrator,
+								model.RoleEditor,
+								model.RoleReader,
+							})
+							logging.LogInfof("[WebSocket] SiYuan token validated, role: %v, authOk: %v", roleFloat, authOk)
+						}
+					} else {
+						// 没有 role 字段，可能是统一认证 token，直接允许
+						authOk = true
+						logging.LogInfof("[WebSocket] Unified auth token detected, allowing connection")
+					}
+				}
+				
+				// ✅ 从 token 中提取用户信息并创建 WorkspaceContext
+				if authOk {
+					claims := model.GetTokenClaims(token)
+					
+					// 尝试从 claims 中提取 workspace（灵枢笔记 token）
+					if workspace, ok := claims["workspace"].(string); ok && workspace != "" {
+						if uid, ok := claims["user_id"].(string); ok {
+							userID = uid
+						}
+						if uname, ok := claims["username"].(string); ok {
+							username = uname
+						}
+						workspaceCtx = model.NewWorkspaceContextWithUser(workspace, userID, username)
+						logging.LogInfof("[WebSocket] Connected with SiYuan token - user: %s, workspace: %s", username, workspace)
+					} else {
+						// 如果没有 workspace，说明是统一认证 token，需要验证并获取用户信息
+						unifiedService := model.GetUnifiedAuthService()
+						if unifiedService != nil {
+							// 从 token 字符串重新解析（因为 ParseXAuthToken 已经验证过了）
+							tokenStr := ""
+							authHeader := s.Request.Header.Get("Authorization")
+							if authHeader != "" && strings.HasPrefix(authHeader, "Bearer ") {
+								tokenStr = strings.TrimPrefix(authHeader, "Bearer ")
+							}
+							if tokenStr == "" {
+								// 从 URL 参数获取
+								tokenStr = s.Request.URL.Query().Get("token")
+							}
+							
+							if tokenStr != "" {
+								unifiedUser, err := unifiedService.VerifyToken(tokenStr)
+								if err == nil && unifiedUser != nil {
+									// 确保本地用户存在
+									localUser, err := unifiedService.EnsureLocalUser(unifiedUser)
+									if err == nil && localUser != nil {
+										userID = localUser.ID
+										username = localUser.Username
+										workspaceCtx = model.NewWorkspaceContextWithUser(localUser.Workspace, userID, username)
+										logging.LogInfof("[WebSocket] Connected with unified token - user: %s, workspace: %s", username, localUser.Workspace)
+									} else {
+										logging.LogErrorf("[WebSocket] Failed to ensure local user: %s", err)
+									}
+								} else {
+									logging.LogErrorf("[WebSocket] Failed to verify unified token: %s", err)
+								}
+							}
+						}
+					}
+				}
 			}
 		} else {
 			// 传统模式下的认证逻辑
@@ -717,6 +812,21 @@ func serveWebSocket(ginServer *gin.Engine) {
 						model.RoleEditor,
 						model.RoleReader,
 					})
+					
+					// ✅ 从 token 中提取用户信息
+					if authOk {
+						claims := model.GetTokenClaims(token)
+						if workspace, ok := claims["workspace"].(string); ok && workspace != "" {
+							if uid, ok := claims["user_id"].(string); ok {
+								userID = uid
+							}
+							if uname, ok := claims["username"].(string); ok {
+								username = uname
+							}
+							workspaceCtx = model.NewWorkspaceContextWithUser(workspace, userID, username)
+							logging.LogInfof("[WebSocket] Connected with token - user: %s, workspace: %s", username, workspace)
+						}
+					}
 				}
 			}
 		}
@@ -730,6 +840,21 @@ func serveWebSocket(ginServer *gin.Engine) {
 			s.CloseWithMsg([]byte("  unauthenticated"))
 			logging.LogWarnf("closed an unauthenticated session [%s]", util.GetRemoteAddr(s.Request))
 			return
+		}
+
+		// ✅ 将 WorkspaceContext 存储到 session 中
+		if workspaceCtx != nil {
+			s.Set("workspaceContext", workspaceCtx)
+			s.Set("web_user_id", userID)
+			s.Set("web_username", username)
+			s.Set("web_workspace", workspaceCtx.DataDir)
+			
+			// 设置为当前用户的 Context
+			model.SetCurrentUserContext(username, workspaceCtx)
+			logging.LogInfof("[WebSocket] Set current user context for user: %s", username)
+			logging.LogInfof("[WebSocket] Stored WorkspaceContext - user: %s, workspace: %s", username, workspaceCtx.DataDir)
+		} else {
+			logging.LogWarnf("[WebSocket] No WorkspaceContext available for session")
 		}
 
 		util.AddPushChan(s)

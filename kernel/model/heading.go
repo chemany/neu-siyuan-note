@@ -17,6 +17,7 @@
 package model
 
 import (
+	sql2 "database/sql"
 	"errors"
 	"os"
 	"path"
@@ -307,9 +308,14 @@ func Doc2Heading(srcID, targetID string, after bool) (srcTreeBox, srcTreePath st
 }
 
 func Heading2Doc(srcHeadingID, targetBoxID, targetPath, previousPath string) (srcRootBlockID, newTargetPath string, err error) {
+	return Heading2DocWithContext(GetDefaultWorkspaceContext(), srcHeadingID, targetBoxID, targetPath, previousPath)
+}
+
+// Heading2DocWithContext 使用 WorkspaceContext 将标题转换为文档
+func Heading2DocWithContext(ctx *WorkspaceContext, srcHeadingID, targetBoxID, targetPath, previousPath string) (srcRootBlockID, newTargetPath string, err error) {
 	FlushTxQueue()
 
-	srcTree, _ := LoadTreeByBlockID(srcHeadingID)
+	srcTree, _ := LoadTreeByBlockIDWithContext(ctx, srcHeadingID)
 	if nil == srcTree {
 		err = ErrBlockNotFound
 		return
@@ -330,6 +336,17 @@ func Heading2Doc(srcHeadingID, targetBoxID, targetPath, previousPath string) (sr
 		return
 	}
 
+	// 获取用户特定的 BlockTree 数据库
+	var userDB *sql2.DB
+	if ctx.IsWebMode() {
+		var dbErr error
+		userDB, dbErr = treenode.GetBlockTreeDBManager().GetOrCreateDB(ctx.BlockTreeDBPath)
+		if nil != dbErr {
+			logging.LogErrorf("get or create BlockTree database [%s] failed: %s, falling back to global database", ctx.BlockTreeDBPath, dbErr)
+			userDB = nil
+		}
+	}
+
 	box := Conf.Box(targetBoxID)
 	headingText := getNodeRefText0(headingNode, Conf.Editor.BlockRefDynamicAnchorTextMaxLen, true)
 	if strings.Contains(headingText, "/") {
@@ -341,7 +358,12 @@ func Heading2Doc(srcHeadingID, targetBoxID, targetPath, previousPath string) (sr
 	toHP := path.Join("/", headingText)
 	toFolder := "/"
 	if "" != previousPath {
-		previousDoc := treenode.GetBlockTreeRootByPath(targetBoxID, previousPath)
+		var previousDoc *treenode.BlockTree
+		if nil != userDB {
+			previousDoc = treenode.GetBlockTreeRootByPathWithDB(targetBoxID, previousPath, userDB)
+		} else {
+			previousDoc = treenode.GetBlockTreeRootByPath(targetBoxID, previousPath)
+		}
 		if nil == previousDoc {
 			err = ErrBlockNotFound
 			return
@@ -349,7 +371,12 @@ func Heading2Doc(srcHeadingID, targetBoxID, targetPath, previousPath string) (sr
 		parentPath := path.Dir(previousPath)
 		if "/" != parentPath {
 			parentPath = strings.TrimSuffix(parentPath, "/") + ".sy"
-			parentDoc := treenode.GetBlockTreeRootByPath(targetBoxID, parentPath)
+			var parentDoc *treenode.BlockTree
+			if nil != userDB {
+				parentDoc = treenode.GetBlockTreeRootByPathWithDB(targetBoxID, parentPath, userDB)
+			} else {
+				parentDoc = treenode.GetBlockTreeRootByPath(targetBoxID, parentPath)
+			}
 			if nil == parentDoc {
 				err = ErrBlockNotFound
 				return
@@ -359,7 +386,12 @@ func Heading2Doc(srcHeadingID, targetBoxID, targetPath, previousPath string) (sr
 		}
 	} else {
 		if !moveToRoot {
-			parentDoc := treenode.GetBlockTreeRootByPath(targetBoxID, targetPath)
+			var parentDoc *treenode.BlockTree
+			if nil != userDB {
+				parentDoc = treenode.GetBlockTreeRootByPathWithDB(targetBoxID, targetPath, userDB)
+			} else {
+				parentDoc = treenode.GetBlockTreeRootByPath(targetBoxID, targetPath)
+			}
 			if nil == parentDoc {
 				err = ErrBlockNotFound
 				return
@@ -371,7 +403,7 @@ func Heading2Doc(srcHeadingID, targetBoxID, targetPath, previousPath string) (sr
 
 	newTargetPath = path.Join(toFolder, srcHeadingID+".sy")
 	if !box.Exist(toFolder) {
-		if err = box.MkdirAll(toFolder); err != nil {
+		if err = box.MkdirAllWithContext(ctx, toFolder); err != nil {
 			return
 		}
 	}
@@ -421,7 +453,7 @@ func Heading2Doc(srcHeadingID, targetBoxID, targetPath, previousPath string) (sr
 		srcTree.Root.AppendChild(treenode.NewParagraph(""))
 	}
 	treenode.RemoveBlockTreesByRootID(srcTree.ID)
-	if err = indexWriteTreeUpsertQueue(srcTree); err != nil {
+	if err = indexWriteTreeUpsertQueueWithContext(srcTree, ctx); err != nil {
 		return "", "", err
 	}
 
@@ -433,7 +465,7 @@ func Heading2Doc(srcHeadingID, targetBoxID, targetPath, previousPath string) (sr
 	} else {
 		box.setSortByConf(path.Dir(newTargetPath), newTree.ID)
 	}
-	if err = indexWriteTreeUpsertQueue(newTree); err != nil {
+	if err = indexWriteTreeUpsertQueueWithContext(newTree, ctx); err != nil {
 		return "", "", err
 	}
 	IncSync()

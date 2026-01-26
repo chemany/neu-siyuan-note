@@ -226,14 +226,14 @@ func refreshRefCount(blockID string) {
 func refreshDynamicRefText(updatedDefNode *ast.Node, updatedTree *parse.Tree) {
 	changedDefs := map[string]*ast.Node{updatedDefNode.ID: updatedDefNode}
 	changedTrees := map[string]*parse.Tree{updatedTree.ID: updatedTree}
-	refreshDynamicRefTexts(changedDefs, changedTrees)
+	refreshDynamicRefTexts(changedDefs, changedTrees, nil)
 }
 
 // refreshDynamicRefTexts 用于批量刷新块引用的动态锚文本。
 // 该实现依赖了数据库缓存，导致外部调用时可能需要阻塞等待数据库写入后才能获取到 refs
-func refreshDynamicRefTexts(updatedDefNodes map[string]*ast.Node, updatedTrees map[string]*parse.Tree) {
+func refreshDynamicRefTexts(updatedDefNodes map[string]*ast.Node, updatedTrees map[string]*parse.Tree, ctx *WorkspaceContext) {
 	for i := 0; i < 7; i++ {
-		updatedRefNodes, updatedRefTrees := refreshDynamicRefTexts0(updatedDefNodes, updatedTrees)
+		updatedRefNodes, updatedRefTrees := refreshDynamicRefTexts0(updatedDefNodes, updatedTrees, ctx)
 		if 1 > len(updatedRefNodes) {
 			break
 		}
@@ -241,7 +241,7 @@ func refreshDynamicRefTexts(updatedDefNodes map[string]*ast.Node, updatedTrees m
 	}
 }
 
-func refreshDynamicRefTexts0(updatedDefNodes map[string]*ast.Node, updatedTrees map[string]*parse.Tree) (updatedRefNodes map[string]*ast.Node, updatedRefTrees map[string]*parse.Tree) {
+func refreshDynamicRefTexts0(updatedDefNodes map[string]*ast.Node, updatedTrees map[string]*parse.Tree, ctx *WorkspaceContext) (updatedRefNodes map[string]*ast.Node, updatedRefTrees map[string]*parse.Tree) {
 	updatedRefNodes = map[string]*ast.Node{}
 	updatedRefTrees = map[string]*parse.Tree{}
 
@@ -314,7 +314,11 @@ func refreshDynamicRefTexts0(updatedDefNodes map[string]*ast.Node, updatedTrees 
 
 	// 3. 保存变更
 	for _, tree := range changedRefTree {
-		indexWriteTreeUpsertQueue(tree)
+		if nil != ctx {
+			indexWriteTreeUpsertQueueWithContext(tree, ctx)
+		} else {
+			indexWriteTreeUpsertQueue(tree)
+		}
 	}
 	return
 }

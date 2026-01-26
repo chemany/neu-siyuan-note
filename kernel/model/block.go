@@ -33,7 +33,6 @@ import (
 	"github.com/88250/lute/parse"
 	"github.com/88250/lute/render"
 	"github.com/open-spaced-repetition/go-fsrs/v3"
-	"github.com/siyuan-note/siyuan/kernel/filesys"
 	"github.com/siyuan-note/siyuan/kernel/sql"
 	"github.com/siyuan-note/siyuan/kernel/treenode"
 	"github.com/siyuan-note/siyuan/kernel/util"
@@ -165,8 +164,13 @@ type BlockTreeInfo struct {
 }
 
 func GetBlockTreeInfos(ids []string) (ret map[string]*BlockTreeInfo) {
+	return GetBlockTreeInfosWithContext(GetDefaultWorkspaceContext(), ids)
+}
+
+// GetBlockTreeInfosWithContext 使用 WorkspaceContext 获取块树信息
+func GetBlockTreeInfosWithContext(ctx *WorkspaceContext, ids []string) (ret map[string]*BlockTreeInfo) {
 	ret = map[string]*BlockTreeInfo{}
-	trees := filesys.LoadTrees(ids)
+	trees := LoadTreesWithContext(ctx, ids)
 	for id, tree := range trees {
 		node := treenode.GetNodeInTree(tree, id)
 		if nil == node {
@@ -379,7 +383,11 @@ func RecentUpdatedBlocks() (ret []*Block) {
 }
 
 func TransferBlockRef(fromID, toID string, refIDs []string) (err error) {
-	toTree, _ := LoadTreeByBlockID(toID)
+	return TransferBlockRefWithContext(GetDefaultWorkspaceContext(), fromID, toID, refIDs)
+}
+
+func TransferBlockRefWithContext(ctx *WorkspaceContext, fromID, toID string, refIDs []string) (err error) {
+	toTree, _ := LoadTreeByBlockIDWithContext(ctx, toID)
 	if nil == toTree {
 		err = ErrBlockNotFound
 		return
@@ -397,7 +405,7 @@ func TransferBlockRef(fromID, toID string, refIDs []string) (err error) {
 		refIDs = sql.QueryRefIDsByDefID(fromID, false)
 	}
 
-	trees := filesys.LoadTrees(refIDs)
+	trees := LoadTreesWithContext(ctx, refIDs)
 	for refID, tree := range trees {
 		if nil == tree {
 			continue
@@ -783,13 +791,17 @@ func GetBlockDOM(id string) (ret string) {
 }
 
 func GetBlockDOMs(ids []string) (ret map[string]string) {
+	return GetBlockDOMsWithContext(GetDefaultWorkspaceContext(), ids)
+}
+
+func GetBlockDOMsWithContext(ctx *WorkspaceContext, ids []string) (ret map[string]string) {
 	ret = map[string]string{}
 	if 0 == len(ids) {
 		return
 	}
 
 	luteEngine := NewLute()
-	trees := filesys.LoadTrees(ids)
+	trees := LoadTreesWithContext(ctx, ids)
 	for id, tree := range trees {
 		node := treenode.GetNodeInTree(tree, id)
 		if nil == node {
@@ -823,13 +835,17 @@ func GetBlockDOMWithEmbed(id string) (ret string) {
 }
 
 func GetBlockDOMsWithEmbed(ids []string) (ret map[string]string) {
+	return GetBlockDOMsWithEmbedWithContext(GetDefaultWorkspaceContext(), ids)
+}
+
+func GetBlockDOMsWithEmbedWithContext(ctx *WorkspaceContext, ids []string) (ret map[string]string) {
 	ret = map[string]string{}
 	if 0 == len(ids) {
 		return
 	}
 
 	luteEngine := NewLute()
-	trees := filesys.LoadTrees(ids)
+	trees := LoadTreesWithContext(ctx, ids)
 	for id, tree := range trees {
 		node := treenode.GetNodeInTree(tree, id)
 		if nil == node {

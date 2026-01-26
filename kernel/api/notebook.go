@@ -42,7 +42,9 @@ func getNotebookInfo(c *gin.Context) {
 		return
 	}
 
-	box := model.Conf.Box(boxID)
+	// 使用 WorkspaceContext 获取笔记本
+	ctx := model.GetWorkspaceContext(c)
+	box := model.Conf.BoxWithContext(ctx, boxID)
 	if nil == box {
 		ret.Code = -1
 		ret.Msg = "notebook [" + boxID + "] not found"
@@ -138,7 +140,11 @@ func removeNotebook(c *gin.Context) {
 		return
 	}
 
-	err := model.RemoveBox(notebook)
+	// 获取 WorkspaceContext
+	ctx := model.GetWorkspaceContext(c)
+	
+	// 使用带 Context 的版本
+	err := model.RemoveBoxWithContext(ctx, notebook)
 	if err != nil {
 		ret.Code = -1
 		ret.Msg = err.Error()
@@ -189,13 +195,16 @@ func createNotebook(c *gin.Context) {
 		Name: name,
 	}
 	
-	// 尝试从配置文件读取完整信息
-	boxConf := box.GetConf()
+	// 尝试从配置文件读取完整信息，使用 Context 的 dataDir
+	boxConf := box.GetConfWithDataDir(ctx.GetDataDir())
 	box.Icon = boxConf.Icon
 	box.Sort = boxConf.Sort
 	box.SortMode = boxConf.SortMode
-	// MountWithContext 已经设置 Closed = false，但为了确保正确，这里显式设置
-	box.Closed = false  // 新创建的笔记本应该是打开状态
+	
+	// MountWithContext 已经设置 Closed = false，但为了确保正确，这里显式设置并保存
+	boxConf.Closed = false  // 新创建的笔记本应该是打开状态
+	box.Closed = false
+	box.SaveConfWithDataDir(ctx.GetDataDir(), boxConf)  // 确保配置被保存到文件
 
 	ret.Data = map[string]interface{}{
 		"notebook": box,
@@ -255,7 +264,8 @@ func openNotebook(c *gin.Context) {
 		return
 	}
 
-	box := model.Conf.Box(notebook)
+	// 使用 WorkspaceContext 获取笔记本
+	box := model.Conf.BoxWithContext(ctx, notebook)
 	if nil == box {
 		ret.Code = -1
 		ret.Msg = "opened notebook [" + notebook + "] not found"

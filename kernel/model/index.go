@@ -128,6 +128,146 @@ func (box *Box) Index() {
 	}()
 }
 
+// IndexWithContext 使用 WorkspaceContext 索引笔记本
+func (box *Box) IndexWithContext(ctx *WorkspaceContext) {
+	// 直接同步调用索引函数,避免任务系统不支持 Context 的问题
+	removeBoxRefsWithContext(ctx, box.ID)
+	indexBoxWithContext(ctx, box.ID)
+	IndexRefsWithContext(ctx)
+	go func() {
+		sql.FlushQueue()
+		ResetVirtualBlockRefCache()
+	}()
+}
+
+// removeBoxRefsWithContext 使用 WorkspaceContext 删除笔记本引用
+func removeBoxRefsWithContext(ctx *WorkspaceContext, boxID string) {
+	// 临时切换 DataDir
+	originalDataDir := util.DataDir
+	util.DataDir = ctx.DataDir
+	defer func() {
+		util.DataDir = originalDataDir
+	}()
+	
+	removeBoxRefs(boxID)
+}
+
+// IndexRefsWithContext 使用 WorkspaceContext 索引引用
+func IndexRefsWithContext(ctx *WorkspaceContext) {
+	// 临时切换 DataDir
+	originalDataDir := util.DataDir
+	util.DataDir = ctx.DataDir
+	defer func() {
+		util.DataDir = originalDataDir
+	}()
+	
+	IndexRefs()
+}
+
+// indexBoxWithContext 使用 WorkspaceContext 索引笔记本
+func indexBoxWithContext(ctx *WorkspaceContext, boxID string) {
+	// 使用 BoxWithContext 获取用户特定的笔记本
+	box := Conf.BoxWithContext(ctx, boxID)
+	if nil == box {
+		logging.LogWarnf("box [%s] not found in user context", boxID)
+		return
+	}
+
+	dataDir := ctx.GetDataDir()
+	util.SetBootDetails("Listing files...")
+	files, _, err := box.LsWithDataDir(dataDir, "/")
+	if err != nil {
+		logging.LogErrorf("list files in box [%s] failed: %s", boxID, err)
+		return
+	}
+	
+	boxLen := len(Conf.GetOpenedBoxesWithContext(ctx))
+	if 1 > boxLen {
+		boxLen = 1
+	}
+	bootProgressPart := int32(30.0 / float64(boxLen) / float64(len(files)))
+
+	start := time.Now()
+	luteEngine := util.NewLute()
+	var treeCount int
+	var treeSize int64
+	lock := sync.Mutex{}
+	util.PushStatusBar(fmt.Sprintf("["+html.EscapeString(box.Name)+"] "+Conf.Language(64), len(files)))
+
+	poolSize := runtime.NumCPU()
+	if 4 < poolSize {
+		poolSize = 4
+	}
+	waitGroup := &sync.WaitGroup{}
+	var avNodes []*ast.Node
+	p, _ := ants.NewPoolWithFunc(poolSize, func(arg interface{}) {
+		defer waitGroup.Done()
+
+		file := arg.(*FileInfo)
+		lock.Lock()
+		treeSize += file.size
+		treeCount++
+		i := treeCount
+		lock.Unlock()
+		tree, err := filesys.LoadTreeWithDataDir(dataDir, box.ID, file.path, luteEngine)
+		if err != nil {
+			logging.LogErrorf("read box [%s] tree [%s] failed: %s", box.ID, file.path, err)
+			return
+		}
+
+		docIAL := parse.IAL2MapUnEsc(tree.Root.KramdownIAL)
+		if "" == docIAL["updated"] { // 早期的数据可能没有 updated 属性，这里进行订正
+			updated := util.TimeFromID(tree.Root.ID)
+			tree.Root.SetIALAttr("updated", updated)
+			docIAL["updated"] = updated
+			if _, writeErr := filesys.WriteTreeWithDataDir(tree, dataDir); nil != writeErr {
+				logging.LogErrorf("write tree [%s] failed: %s", tree.Path, writeErr)
+			}
+		}
+
+		lock.Lock()
+		avNodes = append(avNodes, tree.Root.ChildrenByType(ast.NodeAttributeView)...)
+		lock.Unlock()
+
+		cache.PutDocIAL(file.path, docIAL)
+		treenode.IndexBlockTree(tree)
+		sql.IndexTreeQueue(tree)
+		util.IncBootProgress(bootProgressPart, fmt.Sprintf(Conf.Language(92), util.ShortPathForBootingDisplay(tree.Path)))
+		if 1 < i && 0 == i%64 {
+			util.PushStatusBar(fmt.Sprintf(Conf.Language(88), i, (len(files))-i))
+		}
+	})
+	for _, file := range files {
+		if file.isdir || !strings.HasSuffix(file.name, ".sy") {
+			continue
+		}
+
+		if !ast.IsNodeIDPattern(strings.TrimSuffix(file.name, ".sy")) {
+			// 不以块 ID 命名的 .sy 文件不应该被加载到思源中 https://github.com/siyuan-note/siyuan/issues/16089
+			continue
+		}
+
+		waitGroup.Add(1)
+		invokeErr := p.Invoke(file)
+		if nil != invokeErr {
+			logging.LogErrorf("invoke [%s] failed: %s", file.path, invokeErr)
+			continue
+		}
+	}
+	waitGroup.Wait()
+	p.Release()
+
+	// 关联数据库和块
+	av.BatchUpsertBlockRel(avNodes)
+
+	box.UpdateHistoryGenerated() // 初始化历史生成时间为当前时间
+	end := time.Now()
+	elapsed := end.Sub(start).Seconds()
+	logging.LogInfof("rebuilt database for notebook [%s] in [%.2fs], tree [count=%d, size=%s]", box.ID, elapsed, treeCount, humanize.BytesCustomCeil(uint64(treeSize), 2))
+	debug.FreeOSMemory()
+	return
+}
+
 func removeBoxRefs(boxID string) {
 	sql.DeleteBoxRefsQueue(boxID)
 }
