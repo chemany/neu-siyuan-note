@@ -174,25 +174,16 @@ func getOCRFilePath(assetPath string) string {
 	return assetPath + ".ocr.json"
 }
 
-// saveOCRResult 保存 OCR 结果到文件
+// saveOCRResult 保存 OCR 结果
+// 优化后的流程: 只保存 Markdown,不保存 JSON
+// 这样可以避免索引混乱,减少存储空间
 func saveOCRResult(result *OCRAssetResult) error {
-	ocrPath := getOCRFilePath(result.AssetPath)
-	data, err := json.MarshalIndent(result, "", "  ")
-	if err != nil {
-		return fmt.Errorf("序列化 OCR 结果失败: %v", err)
-	}
-	
-	// 保存 JSON 文件
-	if err := os.WriteFile(ocrPath, data, 0644); err != nil {
-		return err
-	}
-	
-	// 同时生成 Markdown 文档
+	// 直接生成并保存 Markdown 文档
 	if err := saveOCRAsMarkdown(result); err != nil {
-		logging.LogWarnf("生成 Markdown 文档失败: %v", err)
-		// 不返回错误，因为 JSON 已经保存成功
+		return fmt.Errorf("生成 Markdown 文档失败: %v", err)
 	}
 	
+	logging.LogInfof("已保存 OCR 结果为 Markdown: %s.md", result.AssetPath)
 	return nil
 }
 
@@ -236,14 +227,21 @@ func saveOCRAsMarkdown(result *OCRAssetResult) error {
 				if len(text) < 3 || text[1] == ' ' || text[1] == '.' {
 					isTitle = true
 					titleLevel = 1
-				} else if len(text) >= 3 && strings.Contains(text[:5], ".") {
-					dotCount := strings.Count(text[:5], ".")
-					if dotCount == 1 {
-						titleLevel = 2
-					} else if dotCount >= 2 {
-						titleLevel = 3
+				} else if len(text) >= 3 {
+					// 安全地检查前几个字符中是否包含点号
+					checkLen := len(text)
+					if checkLen > 5 {
+						checkLen = 5
 					}
-					isTitle = true
+					if strings.Contains(text[:checkLen], ".") {
+						dotCount := strings.Count(text[:checkLen], ".")
+						if dotCount == 1 {
+							titleLevel = 2
+						} else if dotCount >= 2 {
+							titleLevel = 3
+						}
+						isTitle = true
+					}
 				}
 			}
 			
@@ -330,23 +328,51 @@ func saveOCRAsMarkdown(result *OCRAssetResult) error {
 }
 
 // loadOCRResult 加载 OCR 结果
+// 优化后: 从 Markdown 文件读取,而不是 JSON
 func loadOCRResult(assetPath string) (*OCRAssetResult, error) {
-	ocrPath := getOCRFilePath(assetPath)
-	if !gulu.File.IsExist(ocrPath) {
-		return nil, fmt.Errorf("OCR 结果文件不存在")
+	mdPath := assetPath + ".md"
+	if !gulu.File.IsExist(mdPath) {
+		return nil, fmt.Errorf("Markdown 文件不存在")
 	}
 
-	data, err := os.ReadFile(ocrPath)
+	data, err := os.ReadFile(mdPath)
 	if err != nil {
 		return nil, err
 	}
 
-	var result OCRAssetResult
-	if err := json.Unmarshal(data, &result); err != nil {
-		return nil, err
+	// 从 Markdown 提取文本内容
+	content := string(data)
+	
+	// 移除 Markdown 标记,提取纯文本
+	lines := strings.Split(content, "\n")
+	var textLines []string
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		// 跳过标题行、分隔线、引用等
+		if line == "" || strings.HasPrefix(line, "#") || 
+		   strings.HasPrefix(line, ">") || strings.HasPrefix(line, "---") {
+			continue
+		}
+		// 移除列表标记
+		line = strings.TrimPrefix(line, "- ")
+		if line != "" {
+			textLines = append(textLines, line)
+		}
+	}
+	
+	fullText := strings.Join(textLines, "\n")
+	fileName := filepath.Base(assetPath)
+	
+	result := &OCRAssetResult{
+		ID:        gulu.Rand.String(16),
+		AssetPath: assetPath,
+		FileName:  fileName,
+		FileType:  filepath.Ext(assetPath),
+		FullText:  fullText,
+		UpdatedAt: time.Now(),
 	}
 
-	return &result, nil
+	return result, nil
 }
 
 // OCRAsset 对资源文件进行 OCR 识别
@@ -571,7 +597,8 @@ func GetOCRText(assetPath string) (string, error) {
 }
 
 // HasOCRResult 检查是否已有 OCR 结果
+// 优化后: 检查 Markdown 文件而不是 JSON
 func HasOCRResult(assetPath string) bool {
-	ocrPath := getOCRFilePath(assetPath)
-	return gulu.File.IsExist(ocrPath)
+	mdPath := assetPath + ".md"
+	return gulu.File.IsExist(mdPath)
 }

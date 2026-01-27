@@ -1893,18 +1893,7 @@ func parsePDF(filePath string) (string, error) {
 		}
 	}
 	
-	// 2. 检查是否有 OCR JSON 文件（可以快速读取）
-	ocrJSONPath := filePath + ".ocr.json"
-	if gulu.File.IsExist(ocrJSONPath) {
-		logging.LogInfof("发现 OCR JSON 文件，读取文本: %s", ocrJSONPath)
-		text, err := GetOCRText(filePath)
-		if err == nil && len(strings.TrimSpace(text)) > 100 {
-			logging.LogInfof("使用 OCR JSON 文本，长度: %d 字符", len(text))
-			return text, nil
-		}
-	}
-	
-	// 3. 使用 pdftotext 命令行工具
+	// 2. 使用 pdftotext 命令行工具
 	cmd := exec.Command("pdftotext", "-enc", "UTF-8", "-layout", filePath, "-")
 	output, err := cmd.Output()
 	if err != nil {
