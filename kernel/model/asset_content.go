@@ -363,36 +363,36 @@ func fullReindexAssetContent() {
 
 func fullReindexAssetContentWithContext(ctx *WorkspaceContext) {
 	util.PushMsg(Conf.Language(216), 7*1000)
-	
+
 	// 使用用户上下文初始化数据库
 	if err := sqlDB.InitAssetContentDatabaseWithContext(ctx, true); err != nil {
 		logging.LogErrorf("[用户: %s] 重新初始化附件内容数据库失败: %s", ctx.Username, err)
 		return
 	}
-	
+
 	// 临时设置 DataDir 为用户的数据目录
 	originalDataDir := util.DataDir
 	defer func() {
 		util.DataDir = originalDataDir
 	}()
 	util.DataDir = ctx.GetDataDir()
-	
+
 	logging.LogInfof("[用户: %s] 开始重新索引附件内容, DataDir: %s", ctx.Username, util.DataDir)
-	
+
 	// 临时设置用户的数据库连接
 	if err := sqlDB.SetAssetContentDBForContext(ctx); err != nil {
 		logging.LogErrorf("[用户: %s] 设置附件内容数据库连接失败: %s", ctx.Username, err)
 		return
 	}
-	
+
 	// 执行索引
 	assetContentSearcher.FullIndex()
-	
+
 	logging.LogInfof("[用户: %s] 索引完成", ctx.Username)
-	
+
 	// 恢复数据库连接
 	sqlDB.RestoreAssetContentDB()
-	
+
 	logging.LogInfof("[用户: %s] 附件内容重新索引完成", ctx.Username)
 	return
 }
@@ -1021,15 +1021,15 @@ func FullTextSearchAssetContentWithContext(ctx *WorkspaceContext, query string, 
 		return []*AssetContent{}, 0, 0
 	}
 	defer sqlDB.RestoreAssetContentDB()
-	
+
 	// 暂时保存原始的 util.DataDir
 	originalDataDir := util.DataDir
 	defer func() {
 		util.DataDir = originalDataDir
 	}()
-	
+
 	// 临时设置为用户的 DataDir
 	util.DataDir = ctx.GetDataDir()
-	
+
 	return FullTextSearchAssetContent(query, types, method, orderBy, page, pageSize)
 }

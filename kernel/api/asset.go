@@ -471,7 +471,7 @@ func insertLocalAssets(c *gin.Context) {
 		isUpload = isUploadArg.(bool)
 	}
 	id := arg["id"].(string)
-	
+
 	// 获取 WorkspaceContext 并使用带 Context 的版本
 	ctx := model.GetWorkspaceContext(c)
 	succMap, err := model.InsertLocalAssetsWithContext(ctx, id, assetPaths, isUpload)
