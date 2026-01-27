@@ -56,7 +56,8 @@ type WorkspaceContext struct {
 	TempDir      string // 临时文件目录
 	
 	// 数据库路径
-	BlockTreeDBPath string // BlockTree 数据库路径
+	BlockTreeDBPath    string // BlockTree 数据库路径
+	AssetContentDBPath string // 附件内容数据库路径
 	
 	// 用户信息
 	UserID   string // 用户 ID
@@ -71,14 +72,15 @@ type WorkspaceContext struct {
 func NewWorkspaceContext(workspace string) *WorkspaceContext {
 	tempDir := workspace + "/temp"
 	return &WorkspaceContext{
-		WorkspaceDir:    workspace,
-		DataDir:         workspace,           // 注意：用户的笔记本直接在 workspace 根目录
-		ConfDir:         workspace + "/conf",  // 配置目录在 workspace/conf（appearance、conf.json 等）
-		RepoDir:         workspace + "/repo",
-		HistoryDir:      workspace + "/history",
-		TempDir:         tempDir,
-		BlockTreeDBPath: tempDir + "/blocktree.db", // 用户特定的 BlockTree 数据库
-		WorkspaceName:   "",
+		WorkspaceDir:       workspace,
+		DataDir:            workspace,           // 注意：用户的笔记本直接在 workspace 根目录
+		ConfDir:            workspace + "/conf",  // 配置目录在 workspace/conf（appearance、conf.json 等）
+		RepoDir:            workspace + "/repo",
+		HistoryDir:         workspace + "/history",
+		TempDir:            tempDir,
+		BlockTreeDBPath:    tempDir + "/blocktree.db", // 用户特定的 BlockTree 数据库
+		AssetContentDBPath: tempDir + "/asset_content.db", // 用户特定的附件内容数据库
+		WorkspaceName:      "",
 	}
 }
 
@@ -126,16 +128,17 @@ func GetDefaultWorkspaceContext() *WorkspaceContext {
 	
 	// 非 Web 模式或没有当前用户,返回全局 workspace
 	return &WorkspaceContext{
-		WorkspaceDir:    util.WorkspaceDir,
-		DataDir:         util.DataDir,
-		ConfDir:         util.ConfDir,
-		RepoDir:         util.RepoDir,
-		HistoryDir:      util.HistoryDir,
-		TempDir:         util.TempDir,
-		BlockTreeDBPath: util.BlockTreeDBPath,
-		WorkspaceName:   util.WorkspaceName,
-		UserID:          "",
-		Username:        "",
+		WorkspaceDir:       util.WorkspaceDir,
+		DataDir:            util.DataDir,
+		ConfDir:            util.ConfDir,
+		RepoDir:            util.RepoDir,
+		HistoryDir:         util.HistoryDir,
+		TempDir:            util.TempDir,
+		BlockTreeDBPath:    util.BlockTreeDBPath,
+		AssetContentDBPath: util.AssetContentDBPath,
+		WorkspaceName:      util.WorkspaceName,
+		UserID:             "",
+		Username:           "",
 	}
 }
 
@@ -227,6 +230,11 @@ func (ctx *WorkspaceContext) GetTempDir() string {
 // GetBlockTreeDBPath 获取 BlockTree 数据库路径
 func (ctx *WorkspaceContext) GetBlockTreeDBPath() string {
 	return ctx.BlockTreeDBPath
+}
+
+// GetAssetContentDBPath 获取附件内容数据库路径
+func (ctx *WorkspaceContext) GetAssetContentDBPath() string {
+	return ctx.AssetContentDBPath
 }
 
 // GetWorkspaceDir 获取 workspace 根目录

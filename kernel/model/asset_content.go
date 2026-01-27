@@ -41,6 +41,7 @@ import (
 	"github.com/siyuan-note/logging"
 	"github.com/siyuan-note/siyuan/kernel/search"
 	"github.com/siyuan-note/siyuan/kernel/sql"
+	sqlDB "github.com/siyuan-note/siyuan/kernel/sql"
 	"github.com/siyuan-note/siyuan/kernel/task"
 	"github.com/siyuan-note/siyuan/kernel/util"
 	"github.com/xuri/excelize/v2"
@@ -344,11 +345,55 @@ func ReindexAssetContent() {
 	return
 }
 
+// ReindexAssetContentWithContext 使用用户上下文重新索引附件内容
+func ReindexAssetContentWithContext(ctx *WorkspaceContext) {
+	task.AppendTask(task.AssetContentDatabaseIndexFull, func() {
+		fullReindexAssetContentWithContext(ctx)
+	})
+	return
+}
+
 func fullReindexAssetContent() {
 	util.PushMsg(Conf.Language(216), 7*1000)
 	sql.InitAssetContentDatabase(true)
 
 	assetContentSearcher.FullIndex()
+	return
+}
+
+func fullReindexAssetContentWithContext(ctx *WorkspaceContext) {
+	util.PushMsg(Conf.Language(216), 7*1000)
+	
+	// 使用用户上下文初始化数据库
+	if err := sqlDB.InitAssetContentDatabaseWithContext(ctx, true); err != nil {
+		logging.LogErrorf("[用户: %s] 重新初始化附件内容数据库失败: %s", ctx.Username, err)
+		return
+	}
+	
+	// 临时设置 DataDir 为用户的数据目录
+	originalDataDir := util.DataDir
+	defer func() {
+		util.DataDir = originalDataDir
+	}()
+	util.DataDir = ctx.GetDataDir()
+	
+	logging.LogInfof("[用户: %s] 开始重新索引附件内容, DataDir: %s", ctx.Username, util.DataDir)
+	
+	// 临时设置用户的数据库连接
+	if err := sqlDB.SetAssetContentDBForContext(ctx); err != nil {
+		logging.LogErrorf("[用户: %s] 设置附件内容数据库连接失败: %s", ctx.Username, err)
+		return
+	}
+	
+	// 执行索引
+	assetContentSearcher.FullIndex()
+	
+	logging.LogInfof("[用户: %s] 索引完成", ctx.Username)
+	
+	// 恢复数据库连接
+	sqlDB.RestoreAssetContentDB()
+	
+	logging.LogInfof("[用户: %s] 附件内容重新索引完成", ctx.Username)
 	return
 }
 
@@ -386,7 +431,10 @@ func (searcher *AssetsSearcher) FullIndex() {
 		return
 	}
 
-	var results []*AssetParseResult
+	const batchSize = 100
+	var batch []*AssetParseResult
+	fileCount := 0
+
 	filelock.Walk(assetsDir, func(absPath string, d fs.DirEntry, err error) error {
 		if err != nil {
 			logging.LogErrorf("walk dir [%s] failed: %s", absPath, err)
@@ -419,12 +467,28 @@ func (searcher *AssetsSearcher) FullIndex() {
 		result.Path = "assets" + filepath.ToSlash(strings.TrimPrefix(absPath, assetsDir))
 		result.Size = info.Size()
 		result.Updated = info.ModTime().Unix()
-		results = append(results, result)
+		batch = append(batch, result)
+		fileCount++
+
+		// 每 100 个文件刷新一次
+		if len(batch) >= batchSize {
+			searcher.flushBatch(batch)
+			batch = nil // 清空批次
+		}
 		return nil
 	})
 
+	// 刷新剩余的文件
+	if len(batch) > 0 {
+		searcher.flushBatch(batch)
+	}
+
+	logging.LogInfof("索引操作已加入队列,共 %d 个文件", fileCount)
+}
+
+func (searcher *AssetsSearcher) flushBatch(batch []*AssetParseResult) {
 	var assetContents []*sql.AssetContent
-	for _, result := range results {
+	for _, result := range batch {
 		assetContents = append(assetContents, &sql.AssetContent{
 			ID:      ast.NewNodeID(),
 			Name:    util.RemoveID(filepath.Base(result.Path)),
@@ -437,6 +501,7 @@ func (searcher *AssetsSearcher) FullIndex() {
 	}
 
 	sql.IndexAssetContentsQueue(assetContents)
+	sql.FlushAssetContentQueue() // 立即刷新
 }
 
 func NewAssetsSearcher() *AssetsSearcher {
@@ -950,6 +1015,13 @@ func (parser *EpubAssetParser) Parse(absPath string) (ret *AssetParseResult) {
 
 // FullTextSearchAssetContentWithContext 使用 WorkspaceContext 全文搜索资产内容
 func FullTextSearchAssetContentWithContext(ctx *WorkspaceContext, query string, types map[string]bool, method, orderBy, page, pageSize int) (ret []*AssetContent, matchedAssetCount, pageCount int) {
+	// 临时切换到用户的数据库连接
+	if err := sqlDB.SetAssetContentDBForContext(ctx); err != nil {
+		logging.LogErrorf("[用户: %s] 设置附件内容数据库连接失败: %s", ctx.Username, err)
+		return []*AssetContent{}, 0, 0
+	}
+	defer sqlDB.RestoreAssetContentDB()
+	
 	// 暂时保存原始的 util.DataDir
 	originalDataDir := util.DataDir
 	defer func() {

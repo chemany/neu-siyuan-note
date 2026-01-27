@@ -54,12 +54,18 @@ type WorkspaceContextInterface interface {
 	GetDataDir() string
 	GetConfDir() string
 	GetWorkspaceDir() string
+	GetTempDir() string
+	GetAssetContentDBPath() string
 }
 
 var (
 	db             *sql.DB
 	historyDB      *sql.DB
 	assetContentDB *sql.DB
+	
+	// 保存原始的全局数据库连接,用于临时切换
+	originalAssetContentDB *sql.DB
+	assetContentDBLock     sync.Mutex
 	
 	// goroutine-local Context 存储，用于多用户架构
 	contextMap = sync.Map{} // goroutineID -> WorkspaceContextInterface
@@ -350,6 +356,69 @@ func InitAssetContentDatabase(forceRebuild bool) {
 	initAssetContentDBTables()
 }
 
+// InitAssetContentDatabaseWithContext 使用用户上下文初始化附件内容数据库
+func InitAssetContentDatabaseWithContext(ctx WorkspaceContextInterface, forceRebuild bool) error {
+	initAssetContentDatabaseLock.Lock()
+	defer initAssetContentDatabaseLock.Unlock()
+
+	dbPath := ctx.GetAssetContentDBPath()
+	logging.LogInfof("[用户: %s] 初始化附件内容数据库: %s", ctx.GetWorkspaceDir(), dbPath)
+
+	// 确保目录存在
+	dbDir := filepath.Dir(dbPath)
+	if err := os.MkdirAll(dbDir, 0755); err != nil {
+		logging.LogErrorf("[用户: %s] 创建数据库目录失败 [%s]: %s", ctx.GetWorkspaceDir(), dbDir, err)
+		return err
+	}
+
+	// 如果需要强制重建，删除旧数据库
+	if forceRebuild && gulu.File.IsExist(dbPath) {
+		if err := os.RemoveAll(dbPath); err != nil {
+			logging.LogErrorf("[用户: %s] 删除旧数据库失败 [%s]: %s", ctx.GetWorkspaceDir(), dbPath, err)
+			return err
+		}
+	}
+
+	// 如果数据库已存在且不需要重建，直接返回
+	if !forceRebuild && gulu.File.IsExist(dbPath) {
+		logging.LogInfof("[用户: %s] 附件内容数据库已存在: %s", ctx.GetWorkspaceDir(), dbPath)
+		return nil
+	}
+
+	// 打开数据库连接
+	dsn := dbPath + "?_journal_mode=WAL" +
+		"&_synchronous=OFF" +
+		"&_mmap_size=2684354560" +
+		"&_secure_delete=OFF" +
+		"&_cache_size=-20480" +
+		"&_page_size=32768" +
+		"&_busy_timeout=7000" +
+		"&_ignore_check_constraints=ON" +
+		"&_temp_store=MEMORY" +
+		"&_case_sensitive_like=OFF"
+
+	db, err := sql.Open("sqlite3_extended", dsn)
+	if err != nil {
+		logging.LogErrorf("[用户: %s] 创建附件内容数据库失败: %s", ctx.GetWorkspaceDir(), err)
+		return err
+	}
+	defer db.Close()
+
+	db.SetMaxIdleConns(3)
+	db.SetMaxOpenConns(3)
+	db.SetConnMaxLifetime(365 * 24 * time.Hour)
+
+	// 创建表结构
+	_, err = db.Exec("CREATE VIRTUAL TABLE IF NOT EXISTS asset_contents_fts_case_insensitive USING fts5(id UNINDEXED, name, ext, path, size UNINDEXED, updated UNINDEXED, content, tokenize=\"siyuan case_insensitive\")")
+	if err != nil {
+		logging.LogErrorf("[用户: %s] 创建附件内容表失败: %s", ctx.GetWorkspaceDir(), err)
+		return err
+	}
+
+	logging.LogInfof("[用户: %s] 附件内容数据库初始化完成: %s", ctx.GetWorkspaceDir(), dbPath)
+	return nil
+}
+
 func initAssetContentDBConnection() {
 	if nil != assetContentDB {
 		assetContentDB.Close()
@@ -383,6 +452,66 @@ func initAssetContentDBTables() {
 		logging.LogFatalf(logging.ExitCodeReadOnlyDatabase, "create table [asset_contents_fts_case_insensitive] failed: %s", err)
 	}
 }
+
+// SetAssetContentDBForContext 临时设置用户特定的附件内容数据库连接
+// 用于在重新索引等操作中临时切换数据库
+func SetAssetContentDBForContext(ctx WorkspaceContextInterface) error {
+	assetContentDBLock.Lock()
+	defer assetContentDBLock.Unlock()
+	
+	dbPath := ctx.GetAssetContentDBPath()
+	logging.LogInfof("[用户: %s] 临时切换附件内容数据库到: %s", ctx.GetWorkspaceDir(), dbPath)
+	
+	// 保存原始连接
+	originalAssetContentDB = assetContentDB
+	
+	// 打开用户的数据库连接
+	dsn := dbPath + "?_journal_mode=WAL" +
+		"&_synchronous=OFF" +
+		"&_mmap_size=2684354560" +
+		"&_secure_delete=OFF" +
+		"&_cache_size=-20480" +
+		"&_page_size=32768" +
+		"&_busy_timeout=7000" +
+		"&_ignore_check_constraints=ON" +
+		"&_temp_store=MEMORY" +
+		"&_case_sensitive_like=OFF"
+	
+	var err error
+	assetContentDB, err = sql.Open("sqlite3_extended", dsn)
+	if err != nil {
+		logging.LogErrorf("[用户: %s] 打开附件内容数据库失败: %s", ctx.GetWorkspaceDir(), err)
+		assetContentDB = originalAssetContentDB // 恢复原始连接
+		return err
+	}
+	
+	assetContentDB.SetMaxIdleConns(3)
+	assetContentDB.SetMaxOpenConns(3)
+	assetContentDB.SetConnMaxLifetime(365 * 24 * time.Hour)
+	
+	logging.LogInfof("[用户: %s] 附件内容数据库连接已切换", ctx.GetWorkspaceDir())
+	return nil
+}
+
+// RestoreAssetContentDB 恢复原始的附件内容数据库连接
+func RestoreAssetContentDB() {
+	assetContentDBLock.Lock()
+	defer assetContentDBLock.Unlock()
+	
+	if originalAssetContentDB != nil {
+		// 关闭临时连接
+		if assetContentDB != nil && assetContentDB != originalAssetContentDB {
+			assetContentDB.Close()
+		}
+		
+		// 恢复原始连接
+		assetContentDB = originalAssetContentDB
+		originalAssetContentDB = nil
+		
+		logging.LogInfof("附件内容数据库连接已恢复")
+	}
+}
+
 
 var (
 	caseSensitive  bool

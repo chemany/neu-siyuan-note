@@ -52,8 +52,11 @@ func FlushAssetContentQueue() {
 	ops := getAssetContentOperations()
 	total := len(ops)
 	if 1 > total {
+		logging.LogInfof("附件内容队列为空,无需刷新")
 		return
 	}
+
+	logging.LogInfof("开始刷新附件内容队列,共 %d 个操作", total)
 
 	assetContentTxLock.Lock()
 	defer assetContentTxLock.Unlock()
@@ -102,6 +105,7 @@ func FlushAssetContentQueue() {
 	}
 
 	elapsed := time.Now().Sub(start).Milliseconds()
+	logging.LogInfof("附件内容队列刷新完成,共处理 %d 个操作,耗时 %dms", total, elapsed)
 	if 7000 < elapsed {
 		logging.LogInfof("database asset content op tx [%dms]", elapsed)
 	}

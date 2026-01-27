@@ -105,7 +105,16 @@ func chat(c *gin.Context) {
 		}
 	}
 
-	content, err := model.Chat(messages, activeAttachments)
+	// 获取用户上下文
+	ctx := model.GetWorkspaceContext(c)
+	if ctx == nil {
+		ret.Code = -1
+		ret.Msg = "用户未登录或上下文不存在"
+		return
+	}
+
+	// 使用带上下文的 Chat 函数
+	content, err := model.ChatWithContext(ctx, messages, activeAttachments)
 	if err != nil {
 		ret.Code = -1
 		ret.Msg = err.Error()
@@ -163,6 +172,16 @@ func chatStream(c *gin.Context) {
 		}
 	}
 
+	// 获取用户上下文
+	ctx := model.GetWorkspaceContext(c)
+	if ctx == nil {
+		c.JSON(http.StatusUnauthorized, map[string]interface{}{
+			"code": -1,
+			"msg":  "用户未登录或上下文不存在",
+		})
+		return
+	}
+
 	// 设置 SSE 响应头
 	c.Header("Content-Type", "text/event-stream")
 	c.Header("Cache-Control", "no-cache")
@@ -170,7 +189,7 @@ func chatStream(c *gin.Context) {
 	c.Header("Access-Control-Allow-Origin", "*")
 
 	// 流式输出
-	err := model.ChatStream(messages, activeAttachments, func(token string) error {
+	err := model.ChatStreamWithContext(ctx, messages, activeAttachments, func(token string) error {
 		// SSE 格式: data: {json}\n\n
 		data := map[string]interface{}{
 			"token": token,
@@ -505,7 +524,15 @@ func parseAttachment(c *gin.Context) {
 		return
 	}
 
-	content, err := model.ParseAttachment(assetPath)
+	// 获取用户上下文
+	ctx := model.GetWorkspaceContext(c)
+	if ctx == nil {
+		ret.Code = -1
+		ret.Msg = "用户未登录或上下文不存在"
+		return
+	}
+
+	content, err := model.ParseAttachmentWithContext(ctx, assetPath)
 	if err != nil {
 		ret.Code = -1
 		ret.Msg = fmt.Sprintf("解析附件失败: %v", err)
@@ -535,6 +562,14 @@ func batchParseAttachments(c *gin.Context) {
 		return
 	}
 
+	// 获取用户上下文
+	ctx := model.GetWorkspaceContext(c)
+	if ctx == nil {
+		ret.Code = -1
+		ret.Msg = "用户未登录或上下文不存在"
+		return
+	}
+
 	results := make([]map[string]interface{}, 0)
 	for _, p := range pathsArg {
 		assetPath, ok := p.(string)
@@ -542,7 +577,7 @@ func batchParseAttachments(c *gin.Context) {
 			continue
 		}
 
-		content, err := model.ParseAttachment(assetPath)
+		content, err := model.ParseAttachmentWithContext(ctx, assetPath)
 		result := map[string]interface{}{
 			"path": assetPath,
 		}
@@ -577,9 +612,17 @@ func vectorizeAsset(c *gin.Context) {
 		return
 	}
 
-	// 如果是相对路径，转换为绝对路径
+	// 获取用户上下文
+	ctx := model.GetWorkspaceContext(c)
+	if ctx == nil {
+		ret.Code = -1
+		ret.Msg = "用户未登录或上下文不存在"
+		return
+	}
+
+	// 如果是相对路径，转换为绝对路径（使用用户特定的数据目录）
 	if !filepath.IsAbs(assetPath) {
-		assetPath = filepath.Join(util.DataDir, assetPath)
+		assetPath = filepath.Join(ctx.GetDataDir(), assetPath)
 	}
 
 	// 执行向量化（向量文件存储在资源文件同目录）
@@ -608,7 +651,15 @@ func getVectorizedAssets(c *gin.Context) {
 	ret := gulu.Ret.NewResult()
 	defer c.JSON(http.StatusOK, ret)
 
-	assets, err := model.GetVectorizedAssets(util.DataDir)
+	// 获取用户上下文
+	ctx := model.GetWorkspaceContext(c)
+	if ctx == nil {
+		ret.Code = -1
+		ret.Msg = "用户未登录或上下文不存在"
+		return
+	}
+
+	assets, err := model.GetVectorizedAssets(ctx.GetDataDir())
 	if err != nil {
 		ret.Code = -1
 		ret.Msg = fmt.Sprintf("获取向量化资源列表失败: %v", err)

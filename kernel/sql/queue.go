@@ -112,20 +112,23 @@ func getWorkspaceContextForBox(boxID string) (WorkspaceContext, error) {
 
 // WorkspaceContextImpl 实现 WorkspaceContext 接口
 type WorkspaceContextImpl struct {
-	WorkspaceDir  string
-	DataDir       string
-	ConfDir       string
-	RepoDir       string
-	HistoryDir    string
-	TempDir       string
-	UserID        string
-	Username      string
-	WorkspaceName string
+	WorkspaceDir       string
+	DataDir            string
+	ConfDir            string
+	RepoDir            string
+	HistoryDir         string
+	TempDir            string
+	AssetContentDBPath string
+	UserID             string
+	Username           string
+	WorkspaceName      string
 }
 
-func (ctx *WorkspaceContextImpl) GetWorkspaceDir() string { return ctx.WorkspaceDir }
-func (ctx *WorkspaceContextImpl) GetDataDir() string      { return ctx.DataDir }
-func (ctx *WorkspaceContextImpl) GetConfDir() string      { return ctx.ConfDir }
+func (ctx *WorkspaceContextImpl) GetWorkspaceDir() string      { return ctx.WorkspaceDir }
+func (ctx *WorkspaceContextImpl) GetDataDir() string           { return ctx.DataDir }
+func (ctx *WorkspaceContextImpl) GetConfDir() string           { return ctx.ConfDir }
+func (ctx *WorkspaceContextImpl) GetTempDir() string           { return ctx.TempDir }
+func (ctx *WorkspaceContextImpl) GetAssetContentDBPath() string { return ctx.AssetContentDBPath }
 
 type dbQueueOperation struct {
 	inQueueTime                   time.Time

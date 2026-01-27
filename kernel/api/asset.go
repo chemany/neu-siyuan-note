@@ -28,6 +28,7 @@ import (
 	"github.com/djherbis/times"
 	"github.com/gin-gonic/gin"
 	"github.com/siyuan-note/filelock"
+	"github.com/siyuan-note/logging"
 	"github.com/siyuan-note/siyuan/kernel/model"
 	_ "github.com/siyuan-note/siyuan/kernel/sql" // [OCR 功能已禁用] 保留 import
 	"github.com/siyuan-note/siyuan/kernel/util"
@@ -101,7 +102,16 @@ func fullReindexAssetContent(c *gin.Context) {
 	ret := gulu.Ret.NewResult()
 	defer c.JSON(http.StatusOK, ret)
 
-	model.ReindexAssetContent()
+	// 获取用户上下文
+	ctx := model.GetWorkspaceContext(c)
+	if ctx != nil && ctx.IsWebMode() {
+		// 多用户模式,使用用户特定的上下文
+		logging.LogInfof("[用户: %s] 触发附件内容重新索引", ctx.Username)
+		model.ReindexAssetContentWithContext(ctx)
+	} else {
+		// 单用户模式,使用全局索引
+		model.ReindexAssetContent()
+	}
 }
 
 // [OCR 功能已禁用] getImageOCRText 返回空文本

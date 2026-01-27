@@ -212,6 +212,38 @@ func getEffectiveAIConfig() (apiKey, apiBaseURL, apiModel string, maxTokens int,
 	return
 }
 
+// ChatWithContext 聊天（支持用户上下文）
+func ChatWithContext(ctx *WorkspaceContext, messages []openai.ChatCompletionMessage, allowedAssets []string) (ret string, err error) {
+	if !isOpenAIAPIEnabled() {
+		return "", fmt.Errorf("AI not enabled")
+	}
+
+	// RAG 增强：从用户消息中提取查询，搜索相关文档
+	messages = EnhanceMessagesWithRAGContext(ctx, messages, allowedAssets)
+
+	apiKey, apiBaseURL, apiModel, maxTokens, temperature := getEffectiveAIConfig()
+
+	client := util.NewOpenAIClient(apiKey, Conf.AI.OpenAI.APIProxy, apiBaseURL, Conf.AI.OpenAI.APIUserAgent, Conf.AI.OpenAI.APIVersion, Conf.AI.OpenAI.APIProvider)
+
+	resp, err := client.CreateChatCompletion(context.Background(), openai.ChatCompletionRequest{
+		Model:       apiModel,
+		Messages:    messages,
+		MaxTokens:   maxTokens,
+		Temperature: float32(temperature),
+	})
+
+	if err != nil {
+		return "", err
+	}
+
+	if len(resp.Choices) > 0 {
+		return resp.Choices[0].Message.Content, nil
+	}
+
+	return "", fmt.Errorf("no response from AI")
+}
+
+// Chat 聊天（兼容旧版本）
 func Chat(messages []openai.ChatCompletionMessage, allowedAssets []string) (ret string, err error) {
 	if !isOpenAIAPIEnabled() {
 		return "", fmt.Errorf("AI not enabled")
@@ -242,7 +274,56 @@ func Chat(messages []openai.ChatCompletionMessage, allowedAssets []string) (ret 
 	return "", fmt.Errorf("no response from AI")
 }
 
-// ChatStream 流式聊天，通过 channel 返回每个 token
+// ChatStreamWithContext 流式聊天，通过 channel 返回每个 token（支持用户上下文）
+func ChatStreamWithContext(ctx *WorkspaceContext, messages []openai.ChatCompletionMessage, allowedAssets []string, onToken func(token string) error) error {
+	if !isOpenAIAPIEnabled() {
+		return fmt.Errorf("AI not enabled")
+	}
+
+	// RAG 增强
+	messages = EnhanceMessagesWithRAGContext(ctx, messages, allowedAssets)
+
+	apiKey, apiBaseURL, apiModel, maxTokens, temperature := getEffectiveAIConfig()
+
+	client := util.NewOpenAIClient(apiKey, Conf.AI.OpenAI.APIProxy, apiBaseURL, Conf.AI.OpenAI.APIUserAgent, Conf.AI.OpenAI.APIVersion, Conf.AI.OpenAI.APIProvider)
+
+	req := openai.ChatCompletionRequest{
+		Model:       apiModel,
+		Messages:    messages,
+		MaxTokens:   maxTokens,
+		Temperature: float32(temperature),
+		Stream:      true,
+	}
+
+	stream, err := client.CreateChatCompletionStream(context.Background(), req)
+	if err != nil {
+		return fmt.Errorf("创建流式请求失败: %v", err)
+	}
+	defer stream.Close()
+
+	for {
+		response, err := stream.Recv()
+		if err != nil {
+			if err.Error() == "EOF" {
+				break
+			}
+			return fmt.Errorf("接收流式响应失败: %v", err)
+		}
+
+		if len(response.Choices) > 0 {
+			token := response.Choices[0].Delta.Content
+			if token != "" {
+				if err := onToken(token); err != nil {
+					return err
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
+// ChatStream 流式聊天，通过 channel 返回每个 token（兼容旧版本）
 func ChatStream(messages []openai.ChatCompletionMessage, allowedAssets []string, onToken func(token string) error) error {
 	if !isOpenAIAPIEnabled() {
 		return fmt.Errorf("AI not enabled")
@@ -291,7 +372,129 @@ func ChatStream(messages []openai.ChatCompletionMessage, allowedAssets []string,
 	return nil
 }
 
-// EnhanceMessagesWithRAG 使用 RAG 增强消息
+// EnhanceMessagesWithRAGContext 使用 RAG 增强消息（支持用户上下文）
+func EnhanceMessagesWithRAGContext(ctx *WorkspaceContext, messages []openai.ChatCompletionMessage, allowedAssets []string) []openai.ChatCompletionMessage {
+	if ctx == nil {
+		logging.LogWarnf("RAG: 用户上下文为空，跳过 RAG 增强")
+		return messages
+	}
+	
+	embeddingService := NewEmbeddingService()
+	if embeddingService == nil || !embeddingService.IsEnabled() {
+		return messages
+	}
+
+	// 从最后一条用户消息中提取查询
+	var userQuery string
+	for i := len(messages) - 1; i >= 0; i-- {
+		if messages[i].Role == "user" {
+			userQuery = messages[i].Content
+			break
+		}
+	}
+
+	if userQuery == "" {
+		return messages
+	}
+
+	// 如果消息中已经包含了"【文档正文内容】"，说明前端已经提供了具体的文档上下文，此时跳过 RAG，避免干扰
+	for _, m := range messages {
+		if m.Role == "system" && strings.Contains(m.Content, "【文档正文内容】") {
+			return messages
+		}
+	}
+
+	// 检测是否为总结类请求
+	isSummaryRequest := false
+	summaryKeywords := []string{"总结", "摘要", "概览", "概括", "所有文档", "文档集", "整体", "总结一下"}
+	for _, kw := range summaryKeywords {
+		if strings.Contains(userQuery, kw) {
+			isSummaryRequest = true
+			break
+		}
+	}
+
+	var ragContext strings.Builder
+	if isSummaryRequest {
+		logging.LogInfof("RAG: 检测到总结请求，执行全量注入模式")
+		// 全量模式：从所有向量化资产中提取所有内容
+		assets, err := GetVectorizedAssetsWithContext(ctx)
+		if err == nil && len(assets) > 0 {
+			ragContext.WriteString("以下是所有相关附件的完整内容总结参考（请以此为准，严禁强行关联不同来源的技术）：\n\n")
+			totalLen := 0
+			// 适配 72k Token 模型：将总结上限提升至 100,000 字符 (约 30k+ Token)
+			const maxTotalLen = 100000 
+			for _, asset := range assets {
+				if totalLen > maxTotalLen { break }
+				// 跨笔记本隔离：如果指定了允许的附件列表，则只包含列表中的文件
+				if len(allowedAssets) > 0 {
+					found := false
+					for _, allowed := range allowedAssets {
+						if asset.FileName == allowed || strings.Contains(asset.AssetPath, allowed) {
+							found = true
+							break
+						}
+					}
+					if !found { continue }
+				}
+				ragContext.WriteString(fmt.Sprintf("--- 文档来源: %s ---\n", asset.FileName))
+				for _, chunk := range asset.Chunks {
+					if totalLen+len(chunk.Content) > maxTotalLen {
+						ragContext.WriteString("...(由于长度限制，后续内容已截断)\n")
+						totalLen = maxTotalLen + 1
+						break
+					}
+					ragContext.WriteString(chunk.Content)
+					ragContext.WriteString("\n")
+					totalLen += len(chunk.Content)
+				}
+				ragContext.WriteString("\n")
+			}
+		}
+	} else {
+		// 问答模式：执行高配版分块检索 (Top-30)
+		chunks, err := SemanticSearchAssetChunksWithContext(ctx, userQuery, 30, allowedAssets)
+		if err == nil && len(chunks) > 0 {
+			logging.LogInfof("RAG: 问答模式，找到 %d 个相关分块", len(chunks))
+			ragContext.WriteString("以下是与用户问题高度相关的文档片段，请据此回答。注意区分不同来源，不要强行拼凑逻辑：\n\n")
+			ragContext.WriteString("以下是与用户问题高度相关的文档片段，请据此回答。注意区分不同来源，不要强行拼凑逻辑：\n\n")
+			totalLen := 0
+			const maxQALen = 30000 // 问答模式大幅扩容至 30,000 字符，提供深层上下文
+			for i, chunk := range chunks {
+				if totalLen+len(chunk.Content) > maxQALen {
+					ragContext.WriteString("...(由于长度限制，后续片段已忽略)\n")
+					break
+				}
+				ragContext.WriteString(fmt.Sprintf("【片段%d - 来源: %s】\n%s\n\n", i+1, chunk.Source, chunk.Content))
+				totalLen += len(chunk.Content)
+			}
+		}
+	}
+
+	if ragContext.Len() == 0 {
+		return messages
+	}
+
+	// 将 RAG 上下文添加到 system 消息中
+	ragSystemMsg := openai.ChatCompletionMessage{
+		Role:    "system",
+		Content: "你是一个严谨的文档分析专家。请分别参考以下不同来源的文档内容回答。\n" +
+				"**绝对规则：**\n" +
+				"1. 严禁在没有明确文档支持的情况下，强行关联或合并不同文档或不同领域的技术逻辑。\n" +
+				"2. 如果不同文档讨论的是不相关的领域（如某种化学工艺 vs 另一种无关中间体），请分段分别陈述，严禁进行逻辑拼凑。\n" +
+				"3. 必须在回答中明确提到信息来源（如\"根据XXX文档...\"）。\n\n" +
+				ragContext.String(),
+	}
+
+	// 在消息列表开头插入 RAG 上下文
+	enhancedMessages := make([]openai.ChatCompletionMessage, 0, len(messages)+1)
+	enhancedMessages = append(enhancedMessages, ragSystemMsg)
+	enhancedMessages = append(enhancedMessages, messages...)
+
+	return enhancedMessages
+}
+
+// EnhanceMessagesWithRAG 使用 RAG 增强消息（兼容旧版本，使用全局 util.DataDir）
 func EnhanceMessagesWithRAG(messages []openai.ChatCompletionMessage, allowedAssets []string) []openai.ChatCompletionMessage {
 	embeddingService := NewEmbeddingService()
 	if embeddingService == nil || !embeddingService.IsEnabled() {
@@ -396,7 +599,7 @@ func EnhanceMessagesWithRAG(messages []openai.ChatCompletionMessage, allowedAsse
 				"**绝对规则：**\n" +
 				"1. 严禁在没有明确文档支持的情况下，强行关联或合并不同文档或不同领域的技术逻辑。\n" +
 				"2. 如果不同文档讨论的是不相关的领域（如某种化学工艺 vs 另一种无关中间体），请分段分别陈述，严禁进行逻辑拼凑。\n" +
-				"3. 必须在回答中明确提到信息来源（如“根据《XXX文档》...”）。\n\n" +
+				"3. 必须在回答中明确提到信息来源（如“根据XXX文档...”）。\n\n" +
 				ragContext.String(),
 	}
 
@@ -1187,6 +1390,14 @@ func loadAllAssetVectors(dataDir string) ([]*AssetVector, error) {
 	return vectors, nil
 }
 
+// GetVectorizedAssetsWithContext 获取已向量化的资源文件列表（支持用户上下文）
+func GetVectorizedAssetsWithContext(ctx *WorkspaceContext) ([]*AssetVector, error) {
+	if ctx == nil {
+		return nil, fmt.Errorf("用户上下文不能为空")
+	}
+	return GetVectorizedAssets(ctx.GetDataDir())
+}
+
 // GetVectorizedAssets 获取已向量化的资源文件列表
 func GetVectorizedAssets(dataDir string) ([]*AssetVector, error) {
 	vectors, err := loadAllAssetVectors(dataDir)
@@ -1325,7 +1536,14 @@ func (s *RerankerService) Rerank(query string, documents []string) ([]float64, e
 	return scores, nil
 }
 
-// SemanticSearchAssetChunks 资源文件分块语义搜索（带重排序）
+// SemanticSearchAssetChunksWithContext 资源文件分块语义搜索（带重排序，支持用户上下文）
+func SemanticSearchAssetChunksWithContext(ctx *WorkspaceContext, query string, limit int, allowedAssets []string) ([]*VectorChunk, error) {
+	if ctx == nil {
+		return nil, fmt.Errorf("用户上下文不能为空")
+	}
+	return SemanticSearchAssetChunks(ctx.GetDataDir(), query, limit, allowedAssets)
+}
+
 // SemanticSearchAssetChunks 资源文件分块语义搜索（带重排序）
 func SemanticSearchAssetChunks(dataDir, query string, limit int, allowedAssets []string) ([]*VectorChunk, error) {
 	embeddingService := NewEmbeddingService()
@@ -1538,7 +1756,58 @@ func BatchVectorizeNotebook(notebookID string) error {
 	return nil
 }
 
-// ParseAttachment 解析附件内容（支持PDF等格式）
+// ParseAttachmentWithContext 解析附件内容（支持用户上下文）
+func ParseAttachmentWithContext(ctx *WorkspaceContext, assetPath string) (string, error) {
+	if ctx == nil {
+		return "", fmt.Errorf("用户上下文不能为空")
+	}
+	
+	// 处理assets路径
+	var fullPath string
+	if strings.HasPrefix(assetPath, "assets/") {
+		// 相对于用户数据目录的assets路径
+		fullPath = filepath.Join(ctx.GetDataDir(), assetPath)
+	} else if strings.HasPrefix(assetPath, "/") {
+		// 绝对路径
+		fullPath = assetPath
+	} else {
+		// 其他情况，尝试在用户数据目录的assets下查找
+		fullPath = filepath.Join(ctx.GetDataDir(), "assets", assetPath)
+	}
+
+	// 检查文件是否存在
+	if !gulu.File.IsExist(fullPath) {
+		return "", fmt.Errorf("文件不存在: %s", fullPath)
+	}
+
+	// 获取文件扩展名
+	ext := strings.ToLower(filepath.Ext(fullPath))
+
+	switch ext {
+	case ".pdf":
+		return parsePDF(fullPath)
+	case ".txt", ".md", ".markdown", ".json", ".xml", ".html", ".htm", ".css", ".js", ".ts", ".go", ".py", ".java", ".c", ".cpp", ".h", ".sh", ".yaml", ".yml", ".toml", ".ini", ".conf", ".log":
+		return parseTextFile(fullPath)
+	case ".docx":
+		return parseDocx(fullPath)
+	case ".doc":
+		return parseDoc(fullPath)
+	case ".xlsx", ".xls":
+		return parseExcel(fullPath)
+	case ".pptx":
+		return parsePptx(fullPath)
+	case ".rtf":
+		return parseRtf(fullPath)
+	case ".odt":
+		return parseOdt(fullPath)
+	case ".csv":
+		return parseCsv(fullPath)
+	default:
+		return "", fmt.Errorf("不支持的文件格式: %s (支持: pdf, doc, docx, xls, xlsx, pptx, txt, md, csv, rtf, odt等)", ext)
+	}
+}
+
+// ParseAttachment 解析附件内容（兼容旧版本，使用全局 util.DataDir）
 func ParseAttachment(assetPath string) (string, error) {
 	// 处理assets路径
 	var fullPath string

@@ -38,6 +38,8 @@ type WorkspaceContext interface {
 	GetWorkspaceDir() string
 	GetConfDir() string
 	GetDataDir() string
+	GetTempDir() string
+	GetAssetContentDBPath() string
 }
 
 // DBPool 数据库连接池，按 workspace 管理数据库连接

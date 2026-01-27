@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/siyuan-note/logging"
+	sqlDB "github.com/siyuan-note/siyuan/kernel/sql"
 	"github.com/siyuan-note/siyuan/kernel/treenode"
 )
 
@@ -234,6 +235,14 @@ func (s *UnifiedAuthService) LoginWithUnifiedToken(token string) (*AuthResponse,
 	// 设置为当前用户的 Context
 	SetCurrentUserContext(user.Username, ctx)
 	logging.LogInfof("Set current user context for user: %s", user.Username)
+	
+	// 初始化用户的附件内容数据库
+	if err := sqlDB.InitAssetContentDatabaseWithContext(ctx, false); err != nil {
+		logging.LogErrorf("Failed to initialize asset content database for user %s: %s", user.Username, err)
+		// 不阻断登录流程，只记录错误
+	} else {
+		logging.LogInfof("Asset content database initialized for user: %s", user.Username)
+	}
 	
 	// 切换到用户特定的 BlockTree 数据库
 	if err := treenode.SwitchBlockTreeDB(ctx.BlockTreeDBPath); err != nil {
