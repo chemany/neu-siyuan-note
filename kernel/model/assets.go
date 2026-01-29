@@ -544,6 +544,9 @@ func GetAssetAbsPath(relativePath string) (ret string, err error) {
 	for _, notebook := range notebooks {
 		notebookAbsPath := filepath.Join(util.DataDir, notebook.ID)
 		filelock.Walk(notebookAbsPath, func(path string, d fs.DirEntry, err error) error {
+			if nil != err || nil == d {
+				return err
+			}
 			if isSkipFile(d.Name()) {
 				if d.IsDir() {
 					return filepath.SkipDir

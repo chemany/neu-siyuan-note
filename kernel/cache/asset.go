@@ -118,6 +118,10 @@ func LoadAssets() {
 
 	assetsCache = map[string]*Asset{}
 	assets := util.GetDataAssetsAbsPath()
+	if assets == "" {
+		logging.LogWarnf("assets path is empty, skip loading assets")
+		return
+	}
 	filelock.Walk(assets, func(path string, d fs.DirEntry, err error) error {
 		if nil != err || nil == d {
 			return err

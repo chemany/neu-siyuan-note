@@ -331,12 +331,13 @@ export class Title {
         /// #if !MOBILE
         const fileModel = getDockByType("file")?.data?.file;
         if (fileModel instanceof Files) {
-            const fileItemElement = fileModel.element.querySelector(`li[data-path="${protyle.path}"]`);
+            const fileItemElement = fileModel.element.querySelector(`ul[data-url="${protyle.notebookId}"] li[data-path="${protyle.path}"]`);
             if (fileItemElement) {
                 const textElement = fileItemElement.querySelector(".b3-list-item__text");
                 if (textElement) {
                     textElement.innerHTML = escapeHtml(currentTitle);
                 }
+                fileItemElement.setAttribute("data-name", Lute.EscapeHTMLStr(currentTitle));
             }
         }
         /// #endif

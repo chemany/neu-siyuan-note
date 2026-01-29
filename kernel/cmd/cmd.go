@@ -28,6 +28,7 @@ type Cmd interface {
 	IsRead() bool // 非读即写
 	Id() float64
 	Exec()
+	Context() *model.WorkspaceContext // ✅ 获取执行上下文（用于多用户隔离）
 }
 
 type BaseCmd struct {
@@ -49,6 +50,12 @@ func (cmd *BaseCmd) Push() {
 	sid, _ := cmd.session.Get("id")
 	cmd.PushPayload.SessionId = sid.(string)
 	util.PushEvent(cmd.PushPayload)
+}
+
+// Context 返回当前命令的 WorkspaceContext
+// 用于多用户环境下的数据隔离
+func (cmd *BaseCmd) Context() *model.WorkspaceContext {
+	return cmd.ctx
 }
 
 func NewCommand(cmdStr string, cmdId float64, param map[string]interface{}, session *melody.Session) (ret Cmd) {
@@ -93,6 +100,13 @@ func NewCommand(cmdStr string, cmdId float64, param map[string]interface{}, sess
 func Exec(cmd Cmd) {
 	go func() {
 		defer logging.Recover()
+
+		// ✅ 设置当前 goroutine 的执行上下文（用于多用户隔离）
+		if ctx := cmd.Context(); ctx != nil {
+			model.SetCurrentExecutionContext(ctx)
+			defer model.ClearCurrentExecutionContext()
+		}
+
 		cmd.Exec()
 	}()
 }

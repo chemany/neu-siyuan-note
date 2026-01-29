@@ -37,8 +37,10 @@ import (
 
 func GetFilePathsByExts(dirPath string, exts []string) (ret []string) {
 	filelock.Walk(dirPath, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			logging.LogErrorf("get file paths by ext failed: %s", err)
+		if nil != err || nil == d {
+			if err != nil {
+				logging.LogErrorf("get file paths by ext failed: %s", err)
+			}
 			return err
 		}
 

@@ -17,15 +17,58 @@
 package model
 
 import (
+	"fmt"
 	"os"
 	"sync"
-	
+	"unsafe"
+
 	"github.com/gin-gonic/gin"
 	"github.com/siyuan-note/logging"
 	"github.com/siyuan-note/siyuan/kernel/filesys"
 	"github.com/siyuan-note/siyuan/kernel/treenode"
 	"github.com/siyuan-note/siyuan/kernel/util"
 )
+
+// currentExecutionContext 存储当前正在执行的 goroutine 的上下文
+// 使用 sync.Map 存储，key 使用 goroutine 特定的标识
+var currentExecutionContext = &sync.Map{}
+
+// SetCurrentExecutionContext 设置当前 goroutine 的执行上下文
+// 在 WebSocket 消息处理或 HTTP 请求处理前调用
+func SetCurrentExecutionContext(ctx *WorkspaceContext) {
+	if ctx == nil {
+		return
+	}
+	// 使用栈指针的哈希作为 key（区分不同 goroutine）
+	key := getGoroutineKey()
+	currentExecutionContext.Store(key, ctx)
+}
+
+// ClearCurrentExecutionContext 清除当前 goroutine 的执行上下文
+// 在 WebSocket 消息处理或 HTTP 请求处理完成后调用
+func ClearCurrentExecutionContext() {
+	key := getGoroutineKey()
+	currentExecutionContext.Delete(key)
+}
+
+// GetCurrentExecutionContext 获取当前 goroutine 的执行上下文
+func GetCurrentExecutionContext() *WorkspaceContext {
+	key := getGoroutineKey()
+	if actual, ok := currentExecutionContext.Load(key); ok {
+		return actual.(*WorkspaceContext)
+	}
+	return nil
+}
+
+// getGoroutineKey 获取当前 goroutine 的 key
+// 使用指针地址区分不同的 goroutine
+func getGoroutineKey() string {
+	// 使用栈上变量的地址来区分不同的 goroutine
+	// 每个 goroutine 有自己的栈，地址范围不同
+	var x int
+	ptr := uintptr(unsafe.Pointer(&x))
+	return fmt.Sprintf("g-%d", ptr>>20) // 取高位，避免栈扩容的影响
+}
 
 // init 初始化 filesys 和 treenode 包的 GetDataDirFunc
 func init() {
@@ -109,23 +152,30 @@ func GetWorkspaceContext(c *gin.Context) *WorkspaceContext {
 // 用于非 Web 模式或未认证的请求
 // 在 Web 模式下,如果有当前用户 Context,则返回当前用户的 Context
 func GetDefaultWorkspaceContext() *WorkspaceContext {
+	// 首先检查当前是否有执行上下文（WebSocket/HTTP 请求处理中）
+	if os.Getenv("SIYUAN_WEB_MODE") == "true" {
+		if ctx := GetCurrentExecutionContext(); ctx != nil {
+			return ctx
+		}
+	}
+
 	// 在 Web 模式下,尝试获取当前用户的 Context
 	if os.Getenv("SIYUAN_WEB_MODE") == "true" {
 		currentUserMutex.RLock()
 		userID := currentUserID
 		currentUserMutex.RUnlock()
-		
+
 		if userID != "" {
 			userContextsMutex.RLock()
 			ctx, exists := userContexts[userID]
 			userContextsMutex.RUnlock()
-			
+
 			if exists {
 				return ctx
 			}
 		}
 	}
-	
+
 	// 非 Web 模式或没有当前用户,返回全局 workspace
 	return &WorkspaceContext{
 		WorkspaceDir:       util.WorkspaceDir,

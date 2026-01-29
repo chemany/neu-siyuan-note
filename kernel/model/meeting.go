@@ -22,6 +22,8 @@ var asrEndpoint = "ws://jason.cheman.top:10096/"
 var llmEndpoint = "http://jason.cheman.top:8001/v1"
 var llmAPIKey = "vllm-token"
 var llmModelName = "tclf90/Qwen3-32B-GPTQ-Int4"
+var llmTemperature = 0.3
+var llmMaxTokens = 200
 
 func init() {
 	// 加载 ASR 配置
@@ -55,20 +57,36 @@ func init() {
 	llmData, err := os.ReadFile(llmConfigPath)
 	if err == nil {
 		var models map[string]struct {
-			BaseURL   string `json:"base_url"`
-			APIKey    string `json:"api_key"`
-			ModelName string `json:"model_name"`
+			BaseURL      string  `json:"base_url"`
+			APIKey       string  `json:"api_key"`
+			ModelName    string  `json:"model_name"`
+			Temperature  float64 `json:"temperature"`
+			MaxTokens    int     `json:"max_tokens"`
 		}
 		if json.Unmarshal(llmData, &models) == nil {
-			// 优先使用 siyuan 模型
-			if model, ok := models["builtin_free_siyuan"]; ok {
+			// 优先使用 meeting 专用模型，其次是 siyuan 模型
+			var modelKey string
+			if model, ok := models["builtin_free_meeting"]; ok {
+				modelKey = "builtin_free_meeting"
 				llmEndpoint = model.BaseURL
 				llmAPIKey = model.APIKey
 				llmModelName = model.ModelName
+				llmTemperature = model.Temperature
+				llmMaxTokens = model.MaxTokens
+			} else if model, ok := models["builtin_free_siyuan"]; ok {
+				modelKey = "builtin_free_siyuan"
+				llmEndpoint = model.BaseURL
+				llmAPIKey = model.APIKey
+				llmModelName = model.ModelName
+				llmTemperature = model.Temperature
+				llmMaxTokens = model.MaxTokens
+			}
+			if modelKey != "" {
 				if !strings.HasSuffix(llmEndpoint, "/") {
 					llmEndpoint += "/"
 				}
-				logging.LogInfof("LLM 配置已加载 (siyuan): %s %s", llmEndpoint, llmModelName)
+				logging.LogInfof("LLM 配置已加载 (%s): %s %s (temperature=%.1f, max_tokens=%d)",
+					modelKey, llmEndpoint, llmModelName, llmTemperature, llmMaxTokens)
 			}
 		}
 	} else {
@@ -310,6 +328,19 @@ func convertToUTF8(text string) string {
 
 	logging.LogWarnf("Text has invalid encoding and cannot be converted (length: %d)", len(text))
 	return text
+}
+
+// filterThinkTags 严格过滤思考过程标签
+func filterThinkTags(text string) string {
+	// 过滤闭合的 <think>...</think> 标签
+	re := regexp.MustCompile(`(?s)<think>.*?</think>`)
+	text = re.ReplaceAllString(text, "")
+	// 过滤未闭合的 <think> 标签（如果模型输出了开头但没有结尾）
+	re2 := regexp.MustCompile(`(?s)<think>.*$`)
+	text = re2.ReplaceAllString(text, "")
+	// 过滤可能的变体
+	text = strings.ReplaceAll(text, "</think>", "")
+	return strings.TrimSpace(text)
 }
 
 // MeetingService 会议纪要服务
@@ -599,29 +630,31 @@ func (s *MeetingService) GenerateSummary(text string) (string, error) {
 	apiKey := llmAPIKey
 	modelName := llmModelName
 
-	prompt := fmt.Sprintf(`你是专业的会议纪要撰写专家，请将以下会议内容整理成正式、专业的商务会议纪要格式。
+	prompt := fmt.Sprintf(`请将以下内容整理成简洁的三点摘要。
 
-### 格式要求：
-> **会议主题**：[一句话概括会议核心议题]
-> **关键讨论**：[主要讨论内容的专业概述，2-3句话]
-> **重要决议**：[明确的决定事项和行动要点]
+### 输出格式（必须严格遵循）：
+> **主题**：[一句话概括核心主题]
+> **要点**：[2-3句话概述关键内容]
+> **后续**：[建议的下一步行动或结论]
 
 ### 待整理内容：
 %s
 
-### 输出要求：
-- 直接输出三行会议纪要
-- 不包含任何思考过程或开场白`, text)
+### 要求：
+1. 直接输出三行，不要任何开场白或解释
+2. 禁止输出思考过程、分析步骤、标签等内容
+3. 即使内容不是会议形式，也要提取关键信息整理成这三点
+4. 每行必须以 "> **" 开头`, text)
 
 	payload := map[string]interface{}{
 		"model": modelName,
 		"messages": []map[string]string{
-			{"role": "system", "content": "You are a strict meeting minutes generator. OUTPUT ONLY the summary in the exact format requested. NO explanation. NO thinking process. NO preamble. JUST the three lines starting with '> **'."},
+			{"role": "system", "content": "You are a professional meeting minutes generator. STRICT RULES:\n1. OUTPUT ONLY the three required lines\n2. NEVER use <think> tags or show thinking process\n3. NO explanations, NO analysis steps, NO preamble\n4. Start each line with '> **'\n5. Action items must be concrete and assignable"},
 			{"role": "user", "content": prompt},
 		},
 		"stream":      false,
-		"temperature": 0.3,
-		"max_tokens":  200,
+		"temperature": llmTemperature,
+		"max_tokens":  llmMaxTokens,
 	}
 
 	jsonPayload, _ := json.Marshal(payload)
@@ -661,7 +694,8 @@ func (s *MeetingService) GenerateSummary(text string) (string, error) {
 
 	if len(result.Choices) > 0 {
 		summary := result.Choices[0].Message.Content
-		// 移除 convertToUTF8 调用
+		// 严格过滤思考过程标签（包括未闭合的标签）
+		summary = filterThinkTags(summary)
 		return summary, nil
 	}
 	return "", fmt.Errorf("no summary generated")

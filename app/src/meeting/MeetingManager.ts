@@ -269,32 +269,86 @@ export class MeetingManager {
     private insertTranscriptionToEditor(data: { transcription: string, summary: string }) {
         if (!data.transcription) return;
 
-        // 过滤大模型的思考过程 <think>...</think>
-        const cleanSummary = data.summary.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
-        const cleanTranscription = data.transcription.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
+        // 严格过滤大模型的思考过程（包括未闭合的标签）
+        let cleanSummary = data.summary
+            .replace(/<think>[\s\S]*?<\/think>/gi, "")
+            .replace(/<think>[\s\S]*/gi, "")
+            .replace(/<\/think>/gi, "")
+            .trim();
+        const cleanTranscription = data.transcription
+            .replace(/<think>[\s\S]*?<\/think>/gi, "")
+            .replace(/<think>[\s\S]*/gi, "")
+            .trim();
 
-        // 构建更具 AI 专业感的 HTML 内容
+        // 解析会议纪要三行内容
+        const parsedSummary = this.parseMeetingSummary(cleanSummary);
+
+        // 构建紧凑的思源笔记块格式
         const timeStr = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
 
-        const content = `
-<div style="margin-bottom: 16px; border: 1px solid var(--b3-border-color); border-radius: 8px; padding: 12px; background: var(--b3-theme-surface);">
-    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px; border-bottom: 1px solid var(--b3-border-color); padding-bottom: 4px;">
-        <span style="font-weight: bold; color: var(--b3-theme-primary);">✨ AI 会议纪要</span>
-        <span style="font-size: 12px; opacity: 0.6;">${timeStr}</span>
-    </div>
-    <div style="margin-bottom: 12px;">
-        <div style="font-size: 12px; font-weight: bold; opacity: 0.7; margin-bottom: 4px;">🎯 核心摘要</div>
-        <div style="font-size: 14px; line-height: 1.6;">${cleanSummary}</div>
-    </div>
-    <details>
-        <summary style="font-size: 12px; opacity: 0.5; cursor: pointer;">查看转录原文</summary>
-        <div style="font-size: 13px; opacity: 0.8; margin-top: 8px; white-space: pre-wrap;">${cleanTranscription}</div>
-    </details>
-</div>
+        // 使用思源笔记原生块格式，更紧凑
+        const content = `> ✨ **AI 纪要** <span style="opacity: 0.6; font-size: 0.9em;">${timeStr}</span>
+> 📌 **主题**：${parsedSummary.theme}
+> 💬 **要点**：${parsedSummary.discussion}
+> ⚡ **后续**：${parsedSummary.actions}
+
+> 🔽 **转录原文**（点击展开）
+> ${cleanTranscription.split('\n').map(line => '> ' + line).join('\n')}
 `;
 
         const event = new CustomEvent("neura-meeting-transcription", { detail: content });
         window.dispatchEvent(event);
         showMessage("AI 转录已实时同步");
+    }
+
+    /**
+     * 解析会议纪要三行内容为结构化数据
+     */
+    private parseMeetingSummary(summary: string): { theme: string, discussion: string, actions: string } {
+        // 默认值
+        const result = {
+            theme: "未提取到主题",
+            discussion: "未提取到要点",
+            actions: "未提取到后续"
+        };
+
+        if (!summary) return result;
+
+        // 按行分割并清理
+        const lines = summary.split('\n').map(line => line.trim()).filter(line => line.length > 0);
+
+        // 解析每一行，移除 markdown 标记
+        for (const line of lines) {
+            const cleanLine = line
+                .replace(/^\s*[-*>]+\s*/g, '')  // 移除列表标记和引号
+                .replace(/^\*\*[^*]+\*\*[:：]?\s*/g, '')  // 移除 **主题：** 这样的前缀
+                .trim();
+
+            // 匹配第一行（主题/会议主题）
+            if (line.includes('主题') || line.includes('会议主题')) {
+                result.theme = cleanLine || result.theme;
+            }
+            // 匹配第二行（要点/讨论/关键讨论）
+            else if (line.includes('要点') || line.includes('讨论') || line.includes('关键讨论')) {
+                result.discussion = cleanLine || result.discussion;
+            }
+            // 匹配第三行（后续/行动/行动项/决议）
+            else if (line.includes('后续') || line.includes('行动') || line.includes('行动项') || line.includes('决议') || line.includes('结论')) {
+                result.actions = cleanLine || result.actions;
+            }
+        }
+
+        // 如果没有匹配到特定格式，按顺序分配
+        if (result.theme === "未提取到主题" && lines.length > 0) {
+            result.theme = lines[0].replace(/^\s*[-*>]+\s*/g, '').replace(/^\*\*[^*]+\*\*[:：]?\s*/g, '').trim() || lines[0];
+        }
+        if (result.discussion === "未提取到要点" && lines.length > 1) {
+            result.discussion = lines[1].replace(/^\s*[-*>]+\s*/g, '').replace(/^\*\*[^*]+\*\*[:：]?\s*/g, '').trim() || lines[1];
+        }
+        if (result.actions === "未提取到后续" && lines.length > 2) {
+            result.actions = lines[2].replace(/^\s*[-*>]+\s*/g, '').replace(/^\*\*[^*]+\*\*[:：]?\s*/g, '').trim() || lines[2];
+        }
+
+        return result;
     }
 }
